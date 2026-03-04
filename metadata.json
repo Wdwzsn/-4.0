@@ -1,0 +1,8 @@
+{
+  "name": "长青园 - 智慧养老交流平台",
+  "description": "专为老年人设计的传统文化学习与社交平台。提供太极拳等传统体育视频指导，并集成AI暖心陪伴聊天功能，缓解空巢老人的孤独感。",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
