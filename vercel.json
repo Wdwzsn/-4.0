@@ -1,8 +1,19 @@
 {
+    "version": 2,
     "buildCommand": "npm run build",
     "outputDirectory": "dist",
     "framework": "vite",
+    "functions": {
+        "backend/src/server.ts": {
+            "runtime": "@vercel/node",
+            "includeFiles": "backend/src/**"
+        }
+    },
     "rewrites": [
+        {
+            "source": "/api/(.*)",
+            "destination": "/backend/src/server.ts"
+        },
         {
             "source": "/(.*)",
             "destination": "/index.html"

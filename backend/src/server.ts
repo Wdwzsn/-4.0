@@ -74,34 +74,26 @@ app.use(errorHandler);
 // 启动服务器
 const startServer = async () => {
     try {
-        // 测试数据库连接
         const dbConnected = await testConnection();
-
         if (!dbConnected) {
-            console.warn('⚠️  数据库连接失败，服务器将在离线模式下运行');
-            console.warn('提示：请确保 .env 文件中的 SUPABASE_URL 和 SUPABASE_SERVICE_KEY 配置正确');
-            console.warn('提示：请确认网络可以访问 Supabase 服务（可能需要 VPN）');
+            console.warn('⚠️ 数据库连接失败');
         }
 
         app.listen(PORT, () => {
-            console.log('\n🌳 ==============================');
-            console.log(`   长青园后端服务已启动`);
-            console.log(`   运行在: http://localhost:${PORT}`);
-            console.log(`   环境: ${process.env.NODE_ENV || 'development'}`);
-            console.log('   ==============================\n');
-            console.log('📋 可用的 API 端点:');
-            console.log('   认证: /api/auth/*');
-            console.log('   用户: /api/users/*');
-            console.log('   动态: /api/posts/*');
-            console.log('   好友: /api/friends/*');
-            console.log('   消息: /api/messages/*');
-            console.log('   管理: /api/admin/*');
-            console.log('\n💡 健康检查: http://localhost:' + PORT + '/health\n');
+            console.log(`🚀 后端运行在: http://localhost:${PORT}`);
         });
     } catch (error) {
-        console.error('❌ 服务器启动失败:', error);
-        process.exit(1);
+        console.error('❌ 启动失败:', error);
     }
 };
 
-startServer();
+// 导出 app 供 Vercel 使用
+export default app;
+
+// 非 Vercel 生产环境时手动启动
+if (process.env.VITE_VERCEL !== 'true' && process.env.NODE_ENV !== 'production') {
+    startServer();
+} else {
+    // Vercel 环境下仅初始化数据库连接而不调用 listen
+    testConnection();
+}
