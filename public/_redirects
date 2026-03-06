@@ -1,1 +1,2 @@
-/api/*  https://4-0-sage.vercel.app/api/:splat  200
+# 修正：将 API 请求代理到新的 Vercel 生产域名
+/api/*  https://chang-qing-yuan.vercel.app/api/:splat  200
