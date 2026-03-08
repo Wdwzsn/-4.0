@@ -1,4 +1,5 @@
 /// <reference types="vite/client" />
+import { directAuthAPI, getAdminSupabase } from './directAuth';
 import axios, { AxiosInstance, AxiosError } from 'axios';
 
 // API 基础配置
@@ -92,19 +93,19 @@ export interface AdminLoginData {
 export const authAPI = {
     // 用户注册 - 直接通过 Supabase 处理，无需后端
     register: async (data: RegisterData) => {
-        const { directAuthAPI } = await import('./directAuth');
+        
         return directAuthAPI.register(data as any);
     },
 
     // 用户登录 - 直接通过 Supabase 处理，无需后端
     login: async (data: LoginData) => {
-        const { directAuthAPI } = await import('./directAuth');
+        
         return directAuthAPI.login(data);
     },
 
     // 管理员登录 - 直接通过 Supabase 处理，无需后端
     adminLogin: async (data: AdminLoginData) => {
-        const { directAuthAPI } = await import('./directAuth');
+        
         return directAuthAPI.adminLogin(data);
     },
 
@@ -124,7 +125,7 @@ export const userAPI = {
             const userStr = localStorage.getItem('current_user');
             if (userStr) {
                 const user = JSON.parse(userStr);
-                const { directAuthAPI } = await import('./directAuth');
+                
                 // 我们在 directAuth 中暴露一个快速查询的方法，或者前端直接包装返回值
                 return { success: true, data: user };
             }
@@ -139,7 +140,7 @@ export const userAPI = {
         const userStr = localStorage.getItem('current_user');
         if (!userStr) return { success: false, error: '未登录' };
         const user = JSON.parse(userStr);
-        const { getAdminSupabase } = await import('./directAuth');
+        
         const db = getAdminSupabase();
 
         const { error } = await db.from('users').update(data).eq('id', user.id);
@@ -152,7 +153,7 @@ export const userAPI = {
 
     // 获取指定用户信息
     getUserById: async (userId: string) => {
-        const { getAdminSupabase } = await import('./directAuth');
+        
         const { data, error } = await getAdminSupabase().from('users').select('*').eq('id', userId).single();
         if (error) return { success: false, error: error.message };
         return { success: true, data };
@@ -163,14 +164,14 @@ export const userAPI = {
         const userStr = localStorage.getItem('current_user');
         if (!userStr) return;
         const user = JSON.parse(userStr);
-        const { getAdminSupabase } = await import('./directAuth');
+        
         await getAdminSupabase().from('users').update({ last_active: new Date().toISOString() }).eq('id', user.id);
         return { success: true };
     },
 
     // 搜索用户
     searchUserByPhone: async (phone: string) => {
-        const { getAdminSupabase } = await import('./directAuth');
+        
         const { data, error } = await getAdminSupabase().from('users').select('id, name, avatar, bio, motto').eq('phone', phone).limit(5);
         if (error) return { success: false };
         return { success: true, data };
@@ -187,7 +188,7 @@ export const userAPI = {
 export const postAPI = {
     // 获取动态列表
     getPosts: async (page: number = 1, limit: number = 20) => {
-        const { getAdminSupabase } = await import('./directAuth');
+        
         const db = getAdminSupabase();
 
         // 简单获取 post，前端按点赞和评论拼接
@@ -196,7 +197,7 @@ export const postAPI = {
                 *,
                 author:users(name, avatar),
                 post_likes(id, user_id),
-                comments(id, content, user_id, created_at, users(name))
+                comments(id, content, author_id, created_at, users(name))
             `)
             .order('created_at', { ascending: false })
             .range((page - 1) * limit, page * limit - 1);
@@ -231,7 +232,7 @@ export const postAPI = {
         const userStr = localStorage.getItem('current_user');
         if (!userStr) return { success: false, error: '未登录' };
         const user = JSON.parse(userStr);
-        const { getAdminSupabase } = await import('./directAuth');
+        
 
         const newPost = {
             user_id: user.id,
@@ -250,7 +251,7 @@ export const postAPI = {
         const userStr = localStorage.getItem('current_user');
         if (!userStr) return { success: false };
         const user = JSON.parse(userStr);
-        const { getAdminSupabase } = await import('./directAuth');
+        
         await getAdminSupabase().from('post_likes').insert({ post_id: postId, user_id: user.id });
         return { success: true };
     },
@@ -260,7 +261,7 @@ export const postAPI = {
         const userStr = localStorage.getItem('current_user');
         if (!userStr) return { success: false };
         const user = JSON.parse(userStr);
-        const { getAdminSupabase } = await import('./directAuth');
+        
         await getAdminSupabase().from('post_likes').delete().match({ post_id: postId, user_id: user.id });
         return { success: true };
     },
@@ -270,7 +271,7 @@ export const postAPI = {
         const userStr = localStorage.getItem('current_user');
         if (!userStr) return { success: false };
         const user = JSON.parse(userStr);
-        const { getAdminSupabase } = await import('./directAuth');
+        
         await getAdminSupabase().from('comments').insert({
             post_id: postId,
             user_id: user.id,
@@ -286,7 +287,7 @@ export const postAPI = {
 
     // 删除动态
     deletePost: async (postId: string) => {
-        const { getAdminSupabase } = await import('./directAuth');
+        
         await getAdminSupabase().from('posts').delete().eq('id', postId);
         return { success: true };
     }
@@ -300,7 +301,7 @@ export const friendAPI = {
         const userStr = localStorage.getItem('current_user');
         if (!userStr) return { success: false, data: [] };
         const user = JSON.parse(userStr);
-        const { getAdminSupabase } = await import('./directAuth');
+        
         const db = getAdminSupabase();
 
         // 好友关系在 friends 表中（单条或双向视实现而定，一般前端做双向查询）
@@ -326,7 +327,7 @@ export const friendAPI = {
         const userStr = localStorage.getItem('current_user');
         if (!userStr) return { success: false, error: '未登录' };
         const user = JSON.parse(userStr);
-        const { getAdminSupabase } = await import('./directAuth');
+        
         const db = getAdminSupabase();
 
         // 查找目标用户
@@ -345,7 +346,7 @@ export const friendAPI = {
         const userStr = localStorage.getItem('current_user');
         if (!userStr) return { success: false, data: [] };
         const user = JSON.parse(userStr);
-        const { getAdminSupabase } = await import('./directAuth');
+        
 
         const { data, error } = await getAdminSupabase()
             .from('friend_requests')
@@ -368,7 +369,7 @@ export const friendAPI = {
 
     // 接受好友请求
     acceptFriendRequest: async (requestId: string) => {
-        const { getAdminSupabase } = await import('./directAuth');
+        
         const db = getAdminSupabase();
 
         const { data: req } = await db.from('friend_requests').select('*').eq('id', requestId).single();
@@ -388,7 +389,7 @@ export const friendAPI = {
         const userStr = localStorage.getItem('current_user');
         if (!userStr) return { success: false };
         const user = JSON.parse(userStr);
-        const { getAdminSupabase } = await import('./directAuth');
+        
         const db = getAdminSupabase();
 
         await db.from('friends').delete().match({ user_id: user.id, friend_id: friendId });
@@ -405,7 +406,7 @@ export const messageAPI = {
         const userStr = localStorage.getItem('current_user');
         if (!userStr) return { success: false, data: [] };
         const user = JSON.parse(userStr);
-        const { getAdminSupabase } = await import('./directAuth');
+        
         const db = getAdminSupabase();
 
         const { data, error } = await db.from('messages')
@@ -433,7 +434,7 @@ export const messageAPI = {
         const userStr = localStorage.getItem('current_user');
         if (!userStr) return { success: false };
         const user = JSON.parse(userStr);
-        const { getAdminSupabase } = await import('./directAuth');
+        
         const db = getAdminSupabase();
 
         const { data: inserted, error } = await db.from('messages').insert({
@@ -460,7 +461,7 @@ export const messageAPI = {
 
     // 标记消息已读
     markAsRead: async (messageId: string) => {
-        const { getAdminSupabase } = await import('./directAuth');
+        
         await getAdminSupabase().from('messages').update({ is_read: true }).eq('id', messageId);
         return { success: true };
     },
@@ -471,7 +472,7 @@ export const messageAPI = {
 export const adminAPI = {
     // 获取所有用户列表
     getAllUsers: async () => {
-        const { getAdminSupabase } = await import('./directAuth');
+        
         const { data, error } = await getAdminSupabase().from('users').select('*').order('created_at', { ascending: false });
         if (error) return { success: false, data: [] };
         return { success: true, data: data };
@@ -479,7 +480,7 @@ export const adminAPI = {
 
     // 获取统计数据
     getStats: async () => {
-        const { getAdminSupabase } = await import('./directAuth');
+        
         const db = getAdminSupabase();
 
         const { count: userCount } = await db.from('users').select('*', { count: 'exact', head: true });
@@ -506,13 +507,13 @@ export const adminAPI = {
     messages: {
         // 发送管理员消息 (发送给用户系统消息)
         send: async (toUserId: string, content: string) => {
-            const { getAdminSupabase } = await import('./directAuth');
+            
             await getAdminSupabase().from('admin_messages').insert({ user_id: toUserId, content: content });
             return { success: true };
         },
         // 获取管理员消息历史
         getHistory: async (userId: string) => {
-            const { getAdminSupabase } = await import('./directAuth');
+            
             const { data } = await getAdminSupabase().from('admin_messages').select('*').eq('user_id', userId).order('created_at', { ascending: true });
             return { success: true, data: data || [] };
         },
@@ -522,13 +523,13 @@ export const adminAPI = {
     announcements: {
         // 发布公告
         publish: async (title: string, content: string) => {
-            const { getAdminSupabase } = await import('./directAuth');
+            
             const { error } = await getAdminSupabase().from('announcements').insert({ title, content });
             return { success: !error };
         },
         // 删除公告
         delete: async (id: string) => {
-            const { getAdminSupabase } = await import('./directAuth');
+            
             const { error } = await getAdminSupabase().from('announcements').delete().eq('id', id);
             return { success: !error };
         },
@@ -536,14 +537,14 @@ export const adminAPI = {
 
     // 删除评论
     deleteComment: async (commentId: string) => {
-        const { getAdminSupabase } = await import('./directAuth');
+        
         const { error } = await getAdminSupabase().from('comments').delete().eq('id', commentId);
         return { success: !error };
     },
 
     // 封禁/解封用户
     toggleUserBan: async (userId: string, isBanned: boolean) => {
-        const { getAdminSupabase } = await import('./directAuth');
+        
         const { error } = await getAdminSupabase().from('users').update({ is_banned: isBanned }).eq('id', userId);
         return { success: !error, message: `操作${!error ? '成功' : '失败'}` };
     }
@@ -553,7 +554,7 @@ export const adminAPI = {
 export const announcementAPI = {
     // 获取所有公告
     getAll: async () => {
-        const { getAdminSupabase } = await import('./directAuth');
+        
         const { data, error } = await getAdminSupabase().from('announcements').select('*').order('created_at', { ascending: false });
         if (error) return { success: false, data: [] };
         return { success: true, data: data };
@@ -564,7 +565,7 @@ export const announcementAPI = {
 export const exerciseAPI = {
     // 获取功法列表
     getExercises: async () => {
-        const { getAdminSupabase } = await import('./directAuth');
+        
         const db = getAdminSupabase();
         const { data, error } = await db.from('exercises').select('*').order('created_at', { ascending: false });
         if (error) return { success: false, data: [] };
@@ -590,7 +591,7 @@ export const exerciseAPI = {
 
     // 增加浏览量
     incrementViews: async (id: string) => {
-        const { getAdminSupabase } = await import('./directAuth');
+        
         const db = getAdminSupabase();
         const { data: ex } = await db.from('exercises').select('views').eq('id', id).single();
         if (ex) {
@@ -601,7 +602,7 @@ export const exerciseAPI = {
 
     // (管理员) 新增功法
     createExercise: async (data: any) => {
-        const { getAdminSupabase } = await import('./directAuth');
+        
         const { error } = await getAdminSupabase().from('exercises').insert({
             title: data.title,
             description: data.description,
@@ -617,7 +618,7 @@ export const exerciseAPI = {
 
     // (管理员) 编辑功法
     updateExercise: async (id: string, data: any) => {
-        const { getAdminSupabase } = await import('./directAuth');
+        
         const updateData: any = {};
         if (data.title) updateData.title = data.title;
         if (data.description) updateData.description = data.description;
@@ -634,7 +635,7 @@ export const exerciseAPI = {
 
     // (管理员) 删除功法
     deleteExercise: async (id: string) => {
-        const { getAdminSupabase } = await import('./directAuth');
+        
         const { error } = await getAdminSupabase().from('exercises').delete().eq('id', id);
         return { success: !error };
     },
@@ -645,7 +646,7 @@ export const exerciseAPI = {
         if (!userStr) return { success: false };
         const userId = JSON.parse(userStr).id;
 
-        const { getAdminSupabase } = await import('./directAuth');
+        
         const db = getAdminSupabase();
 
         const { data: ex } = await db.from('exercises').select('likes, likes_users').eq('id', id).single();
@@ -666,7 +667,7 @@ export const exerciseAPI = {
 export const gameAPI = {
     // 获取某个游戏的排行榜
     getLeaderboard: async (gameType: string) => {
-        const { getAdminSupabase } = await import('./directAuth');
+        
         const { data, error } = await getAdminSupabase().from('game_scores')
             .select('score, created_at, users(name, avatar)')
             .eq('game_type', gameType)
@@ -688,7 +689,7 @@ export const gameAPI = {
         const userStr = localStorage.getItem('current_user');
         if (!userStr) return { success: false };
         const user = JSON.parse(userStr);
-        const { getAdminSupabase } = await import('./directAuth');
+        
         await getAdminSupabase().from('game_scores').insert({ user_id: user.id, game_type: data.game_type, score: data.score });
         return { success: true };
     }
