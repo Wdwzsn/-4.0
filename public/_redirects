@@ -1,2 +1,2 @@
-# 修正：将 API 请求代理到新的 Vercel 生产域名
-/api/*  https://chang-qing-yuan.vercel.app/api/:splat  200
+# 最终修正：使用截图中显示的 Vercel 实际生产域名作为代理终点
+/api/*  https://chang-qing-yuan-e1hpeboxq-wdwzsns-projects.vercel.app/api/:splat  200
