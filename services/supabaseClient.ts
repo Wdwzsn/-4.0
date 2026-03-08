@@ -1,10 +1,12 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+// 使用 Service Role Key 直接访问数据库
+const SUPABASE_URL = 'https://oairdwbupxhjdypbcdzl.supabase.co';
+const SUPABASE_SERVICE_KEY = import.meta.env.VITE_SUPABASE_SERVICE_KEY ||
+    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9haXJkd2J1cHhoamR5cGJjZHpsIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MTA1Nzg2MiwiZXhwIjoyMDg2NjMzODYyfQ.8eNd-4WgdZADaiT8BdBeg1isBtsdHvL26o8aQqZmE9g';
 
-if (!supabaseUrl || !supabaseAnonKey) {
-    console.warn('⚠️ 前端 Supabase 配置缺失，视频上传功能可能受限。请检查 .env.local 文件。');
-}
+export const adminSupabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
+    auth: { autoRefreshToken: false, persistSession: false },
+});
 
-export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '');
+export const getAdminSupabase = () => adminSupabase;

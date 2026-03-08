@@ -6,7 +6,7 @@ import { SocialSection } from './components/SocialSection';
 import { EntertainmentSection } from './components/EntertainmentSection';
 import { ACHIEVEMENTS_DATA } from './constants';
 import API from './services/apiService';
-import { supabase } from './services/supabaseClient';
+import { getAdminSupabase } from './services/supabaseClient';
 
 const CAPTCHA_GEN = () => Math.floor(1000 + Math.random() * 9000).toString();
 
@@ -96,9 +96,10 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
       console.log(`正在直传 ${type} 到 ${bucket}...`);
       setUploadProgress(prev => ({ ...prev, [statusKey]: 30 }));
 
+      const supabase = getAdminSupabase();
       const { data, error } = await supabase.storage
-        .from(bucket)
-        .upload(fileName, file, {
+        .from(bucket) // Keep original bucket logic
+        .upload(fileName, file, { // Keep original fileName logic
           cacheControl: '3600',
           upsert: false
         });
@@ -106,7 +107,8 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
       if (error) throw error;
       setUploadProgress(prev => ({ ...prev, [statusKey]: 90 }));
 
-      const { data: { publicUrl } } = supabase.storage.from(bucket).getPublicUrl(fileName);
+      const supabaseForPublicUrl = getAdminSupabase(); // Re-initialize for clarity, though not strictly necessary
+      const { data: { publicUrl } } = supabaseForPublicUrl.storage.from(bucket).getPublicUrl(fileName); // Keep original bucket and fileName logic, and publicUrl destructuring
       setUploadProgress(prev => ({ ...prev, [statusKey]: 100 }));
       return publicUrl;
     } catch (err: any) {

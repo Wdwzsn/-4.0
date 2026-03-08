@@ -1,5 +1,6 @@
 /// <reference types="vite/client" />
-import { directAuthAPI, getAdminSupabase } from './directAuth';
+import { directAuthAPI } from './directAuth';
+import { getAdminSupabase } from './supabaseClient';
 import axios, { AxiosInstance, AxiosError } from 'axios';
 
 // API 基础配置
