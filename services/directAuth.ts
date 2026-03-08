@@ -9,6 +9,20 @@ async function hashPassword(password: string): Promise<string> {
     return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
+// 检查是否旧密码
+async function verifyPassword(password: string, hash: string): Promise<boolean> {
+    if (hash.startsWith('$2')) {
+        // 使用 CDN 版 bcrypt
+        const dcodeIO = (window as any).dcodeIO;
+        if (dcodeIO && dcodeIO.bcrypt) {
+            return dcodeIO.bcrypt.compareSync(password, hash);
+        }
+        throw new Error('密码验证组件未就绪，请刷新重试');
+    }
+    const newHash = await hashPassword(password);
+    return newHash === hash || password === hash;
+}
+
 // 生成简单 JWT（浏览器端）
 async function generateToken(payload: object): Promise<string> {
     const encode = (obj: object) =>
@@ -69,12 +83,8 @@ export const directAuthAPI = {
             throw err;
         }
 
-        // 2. 验证密码 (WebCrypto API)
-        const passwordHash = await hashPassword(password);
-        // Note: 生产环境中建议保留 bcrypt，不过因为这只是一个前端直连迁移方案，简单的 SHA-256 足以通过鉴权
-        // 这里需要兼容可能原来的数据是用 bcrypt 加密的，如果匹配不上则再用 sha256 检查，不过为了稳定，这里就直接做 SHA-256 或者明文验证退役方案好了。
-        // 由于不知道之前数据库里的 hash 格式，统一使用新的 SHA-256
-        const isValid = user.password_hash === passwordHash || user.password_hash === password;
+        // 2. 验证密码 (兼容两种格式)
+        const isValid = await verifyPassword(password, user.password_hash);
         if (!isValid) throw new Error('密码不正确，请重新输入');
 
         // 3. 获取兴趣爱好
@@ -147,8 +157,7 @@ export const directAuthAPI = {
         if (error || !admins || admins.length === 0) throw new Error('管理员账号或密码不正确');
         const admin = admins[0];
 
-        const passwordHash = await hashPassword(password);
-        const isValid = admin.password_hash === passwordHash || admin.password_hash === password;
+        const isValid = await verifyPassword(password, admin.password_hash);
         if (!isValid) throw new Error('管理员账号或密码不正确');
 
         const token = await generateToken({ id: admin.id, phone: '', isAdmin: true });

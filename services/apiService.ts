@@ -94,19 +94,19 @@ export interface AdminLoginData {
 export const authAPI = {
     // 用户注册 - 直接通过 Supabase 处理，无需后端
     register: async (data: RegisterData) => {
-        
+
         return directAuthAPI.register(data as any);
     },
 
     // 用户登录 - 直接通过 Supabase 处理，无需后端
     login: async (data: LoginData) => {
-        
+
         return directAuthAPI.login(data);
     },
 
     // 管理员登录 - 直接通过 Supabase 处理，无需后端
     adminLogin: async (data: AdminLoginData) => {
-        
+
         return directAuthAPI.adminLogin(data);
     },
 
@@ -126,7 +126,7 @@ export const userAPI = {
             const userStr = localStorage.getItem('current_user');
             if (userStr) {
                 const user = JSON.parse(userStr);
-                
+
                 // 我们在 directAuth 中暴露一个快速查询的方法，或者前端直接包装返回值
                 return { success: true, data: user };
             }
@@ -141,7 +141,7 @@ export const userAPI = {
         const userStr = localStorage.getItem('current_user');
         if (!userStr) return { success: false, error: '未登录' };
         const user = JSON.parse(userStr);
-        
+
         const db = getAdminSupabase();
 
         const { error } = await db.from('users').update(data).eq('id', user.id);
@@ -154,7 +154,7 @@ export const userAPI = {
 
     // 获取指定用户信息
     getUserById: async (userId: string) => {
-        
+
         const { data, error } = await getAdminSupabase().from('users').select('*').eq('id', userId).single();
         if (error) return { success: false, error: error.message };
         return { success: true, data };
@@ -165,14 +165,14 @@ export const userAPI = {
         const userStr = localStorage.getItem('current_user');
         if (!userStr) return;
         const user = JSON.parse(userStr);
-        
+
         await getAdminSupabase().from('users').update({ last_active: new Date().toISOString() }).eq('id', user.id);
         return { success: true };
     },
 
     // 搜索用户
     searchUserByPhone: async (phone: string) => {
-        
+
         const { data, error } = await getAdminSupabase().from('users').select('id, name, avatar, bio, motto').eq('phone', phone).limit(5);
         if (error) return { success: false };
         return { success: true, data };
@@ -189,7 +189,7 @@ export const userAPI = {
 export const postAPI = {
     // 获取动态列表
     getPosts: async (page: number = 1, limit: number = 20) => {
-        
+
         const db = getAdminSupabase();
 
         // 简单获取 post，前端按点赞和评论拼接
@@ -233,7 +233,7 @@ export const postAPI = {
         const userStr = localStorage.getItem('current_user');
         if (!userStr) return { success: false, error: '未登录' };
         const user = JSON.parse(userStr);
-        
+
 
         const newPost = {
             user_id: user.id,
@@ -252,7 +252,7 @@ export const postAPI = {
         const userStr = localStorage.getItem('current_user');
         if (!userStr) return { success: false };
         const user = JSON.parse(userStr);
-        
+
         await getAdminSupabase().from('post_likes').insert({ post_id: postId, user_id: user.id });
         return { success: true };
     },
@@ -262,7 +262,7 @@ export const postAPI = {
         const userStr = localStorage.getItem('current_user');
         if (!userStr) return { success: false };
         const user = JSON.parse(userStr);
-        
+
         await getAdminSupabase().from('post_likes').delete().match({ post_id: postId, user_id: user.id });
         return { success: true };
     },
@@ -272,7 +272,7 @@ export const postAPI = {
         const userStr = localStorage.getItem('current_user');
         if (!userStr) return { success: false };
         const user = JSON.parse(userStr);
-        
+
         await getAdminSupabase().from('comments').insert({
             post_id: postId,
             user_id: user.id,
@@ -288,7 +288,7 @@ export const postAPI = {
 
     // 删除动态
     deletePost: async (postId: string) => {
-        
+
         await getAdminSupabase().from('posts').delete().eq('id', postId);
         return { success: true };
     }
@@ -302,7 +302,7 @@ export const friendAPI = {
         const userStr = localStorage.getItem('current_user');
         if (!userStr) return { success: false, data: [] };
         const user = JSON.parse(userStr);
-        
+
         const db = getAdminSupabase();
 
         // 好友关系在 friends 表中（单条或双向视实现而定，一般前端做双向查询）
@@ -328,7 +328,7 @@ export const friendAPI = {
         const userStr = localStorage.getItem('current_user');
         if (!userStr) return { success: false, error: '未登录' };
         const user = JSON.parse(userStr);
-        
+
         const db = getAdminSupabase();
 
         // 查找目标用户
@@ -347,7 +347,7 @@ export const friendAPI = {
         const userStr = localStorage.getItem('current_user');
         if (!userStr) return { success: false, data: [] };
         const user = JSON.parse(userStr);
-        
+
 
         const { data, error } = await getAdminSupabase()
             .from('friend_requests')
@@ -370,7 +370,7 @@ export const friendAPI = {
 
     // 接受好友请求
     acceptFriendRequest: async (requestId: string) => {
-        
+
         const db = getAdminSupabase();
 
         const { data: req } = await db.from('friend_requests').select('*').eq('id', requestId).single();
@@ -390,7 +390,7 @@ export const friendAPI = {
         const userStr = localStorage.getItem('current_user');
         if (!userStr) return { success: false };
         const user = JSON.parse(userStr);
-        
+
         const db = getAdminSupabase();
 
         await db.from('friends').delete().match({ user_id: user.id, friend_id: friendId });
@@ -407,7 +407,7 @@ export const messageAPI = {
         const userStr = localStorage.getItem('current_user');
         if (!userStr) return { success: false, data: [] };
         const user = JSON.parse(userStr);
-        
+
         const db = getAdminSupabase();
 
         const { data, error } = await db.from('messages')
@@ -435,7 +435,7 @@ export const messageAPI = {
         const userStr = localStorage.getItem('current_user');
         if (!userStr) return { success: false };
         const user = JSON.parse(userStr);
-        
+
         const db = getAdminSupabase();
 
         const { data: inserted, error } = await db.from('messages').insert({
@@ -462,7 +462,7 @@ export const messageAPI = {
 
     // 标记消息已读
     markAsRead: async (messageId: string) => {
-        
+
         await getAdminSupabase().from('messages').update({ is_read: true }).eq('id', messageId);
         return { success: true };
     },
@@ -473,7 +473,7 @@ export const messageAPI = {
 export const adminAPI = {
     // 获取所有用户列表
     getAllUsers: async () => {
-        
+
         const { data, error } = await getAdminSupabase().from('users').select('*').order('created_at', { ascending: false });
         if (error) return { success: false, data: [] };
         return { success: true, data: data };
@@ -481,7 +481,7 @@ export const adminAPI = {
 
     // 获取统计数据
     getStats: async () => {
-        
+
         const db = getAdminSupabase();
 
         const { count: userCount } = await db.from('users').select('*', { count: 'exact', head: true });
@@ -508,13 +508,13 @@ export const adminAPI = {
     messages: {
         // 发送管理员消息 (发送给用户系统消息)
         send: async (toUserId: string, content: string) => {
-            
+
             await getAdminSupabase().from('admin_messages').insert({ user_id: toUserId, content: content });
             return { success: true };
         },
         // 获取管理员消息历史
         getHistory: async (userId: string) => {
-            
+
             const { data } = await getAdminSupabase().from('admin_messages').select('*').eq('user_id', userId).order('created_at', { ascending: true });
             return { success: true, data: data || [] };
         },
@@ -524,13 +524,13 @@ export const adminAPI = {
     announcements: {
         // 发布公告
         publish: async (title: string, content: string) => {
-            
+
             const { error } = await getAdminSupabase().from('announcements').insert({ title, content });
             return { success: !error };
         },
         // 删除公告
         delete: async (id: string) => {
-            
+
             const { error } = await getAdminSupabase().from('announcements').delete().eq('id', id);
             return { success: !error };
         },
@@ -538,14 +538,14 @@ export const adminAPI = {
 
     // 删除评论
     deleteComment: async (commentId: string) => {
-        
+
         const { error } = await getAdminSupabase().from('comments').delete().eq('id', commentId);
         return { success: !error };
     },
 
     // 封禁/解封用户
     toggleUserBan: async (userId: string, isBanned: boolean) => {
-        
+
         const { error } = await getAdminSupabase().from('users').update({ is_banned: isBanned }).eq('id', userId);
         return { success: !error, message: `操作${!error ? '成功' : '失败'}` };
     }
@@ -555,7 +555,7 @@ export const adminAPI = {
 export const announcementAPI = {
     // 获取所有公告
     getAll: async () => {
-        
+
         const { data, error } = await getAdminSupabase().from('announcements').select('*').order('created_at', { ascending: false });
         if (error) return { success: false, data: [] };
         return { success: true, data: data };
@@ -566,25 +566,27 @@ export const announcementAPI = {
 export const exerciseAPI = {
     // 获取功法列表
     getExercises: async () => {
-        
+
         const db = getAdminSupabase();
         const { data, error } = await db.from('exercises').select('*').order('created_at', { ascending: false });
         if (error) return { success: false, data: [] };
 
-        // 格式化数据，兼容原对象结构
+        // 格式化数据，兼容原对象结构 (根据数据库实际存在的列进行映射)
         const formatted = (data || []).map((e: any) => ({
             id: e.id,
             title: e.title,
             description: e.description,
-            difficulty: e.difficulty,
-            duration: e.duration,
-            type: e.type,
+            difficulty: '入门', // DB 无此字段，给个默认值
+            duration: '15分钟', // DB 无此字段，默认值
+            type: e.category, // 匹配 category 字段
             videoUrl: e.video_url,
-            thumbnailUrl: e.thumbnail_url || 'https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?fit=crop&q=80',
-            calories: e.calories || 0,
+            thumbnailUrl: e.thumbnail || 'https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?fit=crop&q=80',
+            calories: 0,
             views: e.views || 0,
-            likes: e.likes || 0,
-            hasLiked: e.likes_users?.includes(localStorage.getItem('current_user') ? JSON.parse(localStorage.getItem('current_user')!).id : '')
+            likes: Number(localStorage.getItem(`ex_likes_${e.id}`)) || 0,
+            hasLiked: localStorage.getItem(`ex_liked_${e.id}`) === 'true',
+            articleBody: e.article_body,
+            chapters: e.chapters
         }));
 
         return { success: true, data: formatted };
@@ -592,75 +594,66 @@ export const exerciseAPI = {
 
     // 增加浏览量
     incrementViews: async (id: string) => {
-        
+
         const db = getAdminSupabase();
         const { data: ex } = await db.from('exercises').select('views').eq('id', id).single();
         if (ex) {
-            await db.from('exercises').update({ views: ex.views + 1 }).eq('id', id);
+            await db.from('exercises').update({ views: ex.views + 1, updated_at: new Date().toISOString() }).eq('id', id);
         }
         return { success: true };
     },
 
     // (管理员) 新增功法
     createExercise: async (data: any) => {
-        
-        const { error } = await getAdminSupabase().from('exercises').insert({
+        const db = getAdminSupabase();
+        // 仅插入数据库中真实存在的列，否则 Supabase 会报 42703 Column does not exist
+        const { error } = await db.from('exercises').insert({
             title: data.title,
             description: data.description,
-            difficulty: data.difficulty,
-            duration: data.duration,
-            type: data.type,
+            category: data.type, // 前端传的是 type，DB 叫 category
             video_url: data.videoUrl,
-            thumbnail_url: data.thumbnailUrl,
-            calories: data.calories || 0
+            thumbnail: data.thumbnailUrl, // DB 叫 thumbnail
         });
-        return { success: !error };
+        return { success: !error, error: error?.message };
     },
 
     // (管理员) 编辑功法
     updateExercise: async (id: string, data: any) => {
-        
+        const db = getAdminSupabase();
         const updateData: any = {};
-        if (data.title) updateData.title = data.title;
-        if (data.description) updateData.description = data.description;
-        if (data.difficulty) updateData.difficulty = data.difficulty;
-        if (data.duration) updateData.duration = data.duration;
-        if (data.type) updateData.type = data.type;
-        if (data.videoUrl) updateData.video_url = data.videoUrl;
-        if (data.thumbnailUrl) updateData.thumbnail_url = data.thumbnailUrl;
-        if (data.calories) updateData.calories = data.calories;
+        if (data.title !== undefined) updateData.title = data.title;
+        if (data.description !== undefined) updateData.description = data.description;
+        if (data.type !== undefined) updateData.category = data.type;
+        if (data.videoUrl !== undefined) updateData.video_url = data.videoUrl;
+        if (data.thumbnailUrl !== undefined) updateData.thumbnail = data.thumbnailUrl;
 
-        const { error } = await getAdminSupabase().from('exercises').update(updateData).eq('id', id);
-        return { success: !error };
+        updateData.updated_at = new Date().toISOString();
+
+        const { error } = await db.from('exercises').update(updateData).eq('id', id);
+        return { success: !error, error: error?.message };
     },
 
     // (管理员) 删除功法
     deleteExercise: async (id: string) => {
-        
-        const { error } = await getAdminSupabase().from('exercises').delete().eq('id', id);
+        const db = getAdminSupabase();
+        const { error } = await db.from('exercises').delete().eq('id', id);
         return { success: !error };
     },
 
-    // 点赞
+    // 点赞 (因目前 Supabase 表内无 likes 字段，在此临时采用 localStorage 模拟以防点赞闪退丢失)
     toggleLike: async (id: string) => {
-        const userStr = localStorage.getItem('current_user');
-        if (!userStr) return { success: false };
-        const userId = JSON.parse(userStr).id;
+        const isLiked = localStorage.getItem(`ex_liked_${id}`) === 'true';
+        const currentLikes = Number(localStorage.getItem(`ex_likes_${id}`)) || 0;
 
-        
-        const db = getAdminSupabase();
+        if (isLiked) {
+            localStorage.removeItem(`ex_liked_${id}`);
+            localStorage.setItem(`ex_likes_${id}`, String(Math.max(0, currentLikes - 1)));
+        } else {
+            localStorage.setItem(`ex_liked_${id}`, 'true');
+            localStorage.setItem(`ex_likes_${id}`, String(currentLikes + 1));
+        }
 
-        const { data: ex } = await db.from('exercises').select('likes, likes_users').eq('id', id).single();
-        if (!ex) return { success: false };
-
-        const likesUsers = ex.likes_users || [];
-        const isLiked = likesUsers.includes(userId);
-
-        const newLikesUsers = isLiked ? likesUsers.filter((u: string) => u !== userId) : [...likesUsers, userId];
-        const newLikesCount = isLiked ? Math.max(0, ex.likes - 1) : ex.likes + 1;
-
-        await db.from('exercises').update({ likes: newLikesCount, likes_users: newLikesUsers }).eq('id', id);
-        return { success: true };
+        return { success: true, likes: Number(localStorage.getItem(`ex_likes_${id}`)) };
     }
 };
 
@@ -668,7 +661,7 @@ export const exerciseAPI = {
 export const gameAPI = {
     // 获取某个游戏的排行榜
     getLeaderboard: async (gameType: string) => {
-        
+
         const { data, error } = await getAdminSupabase().from('game_scores')
             .select('score, created_at, users(name, avatar)')
             .eq('game_type', gameType)
@@ -690,7 +683,7 @@ export const gameAPI = {
         const userStr = localStorage.getItem('current_user');
         if (!userStr) return { success: false };
         const user = JSON.parse(userStr);
-        
+
         await getAdminSupabase().from('game_scores').insert({ user_id: user.id, game_type: data.game_type, score: data.score });
         return { success: true };
     }
