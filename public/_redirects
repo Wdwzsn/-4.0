@@ -1,2 +1,4 @@
-# 最终修正：使用截图中显示的 Vercel 实际生产域名作为代理终点
-/api/*  https://chang-qing-yuan-e1hpeboxq-wdwzsns-projects.vercel.app/api/:splat  200
+# 注意：_redirects 代理功能（状态码 200）只有 Netlify 支持。
+# Cloudflare Pages 请使用 functions/ 目录下的 Pages Functions。
+# 此文件仅保留常规 SPA 路由重定向功能。
+/*  /index.html  200
