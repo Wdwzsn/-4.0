@@ -292,88 +292,229 @@ export const postAPI = {
     }
 };
 
-// ========== 好友相关 API ==========
+// ========== 好友相关 API (直连改造) ==========
 
 export const friendAPI = {
     // 获取好友列表
     getFriends: async () => {
-        return apiClient.get('/friends');
+        const userStr = localStorage.getItem('current_user');
+        if (!userStr) return { success: false, data: [] };
+        const user = JSON.parse(userStr);
+        const { getAdminSupabase } = await import('./directAuth');
+        const db = getAdminSupabase();
+
+        // 好友关系在 friends 表中（单条或双向视实现而定，一般前端做双向查询）
+        const { data: friends1 } = await db.from('friends').select('friend_id, friend:users!friends_friend_id_fkey(*)').eq('user_id', user.id);
+        const { data: friends2 } = await db.from('friends').select('user_id, friend:users!friends_user_id_fkey(*)').eq('friend_id', user.id);
+
+        const allFriends = [
+            ...(friends1 || []).map((f: any) => f.friend),
+            ...(friends2 || []).map((f: any) => f.friend)
+        ];
+
+        // 去重并格式化
+        const uniqueFriendsMap = new Map();
+        for (const f of allFriends) {
+            if (f && !uniqueFriendsMap.has(f.id)) uniqueFriendsMap.set(f.id, f);
+        }
+
+        return { success: true, data: Array.from(uniqueFriendsMap.values()) };
     },
 
     // 发送好友请求
     sendFriendRequest: async (toPhone: string) => {
-        return apiClient.post('/friends/request', { toPhone });
+        const userStr = localStorage.getItem('current_user');
+        if (!userStr) return { success: false, error: '未登录' };
+        const user = JSON.parse(userStr);
+        const { getAdminSupabase } = await import('./directAuth');
+        const db = getAdminSupabase();
+
+        // 查找目标用户
+        const { data: targetUser } = await db.from('users').select('id').eq('phone', toPhone).single();
+        if (!targetUser) return { success: false, error: '用户不存在' };
+        if (targetUser.id === user.id) return { success: false, error: '不能添加自己' };
+
+        // 检查是否已是好友或已有请求
+        const { error } = await db.from('friend_requests').insert({ sender_id: user.id, receiver_id: targetUser.id, status: 'pending' });
+        if (error) return { success: false, error: error.message };
+        return { success: true };
     },
 
     // 获取好友请求列表
     getFriendRequests: async () => {
-        return apiClient.get('/friends/requests');
+        const userStr = localStorage.getItem('current_user');
+        if (!userStr) return { success: false, data: [] };
+        const user = JSON.parse(userStr);
+        const { getAdminSupabase } = await import('./directAuth');
+
+        const { data, error } = await getAdminSupabase()
+            .from('friend_requests')
+            .select('id, sender_id, status, created_at, sender:users!friend_requests_sender_id_fkey(name, avatar, phone)')
+            .eq('receiver_id', user.id)
+            .eq('status', 'pending');
+
+        if (error) return { success: false, data: [] };
+
+        return {
+            success: true, data: data.map((req: any) => ({
+                id: req.id,
+                fromUserId: req.sender_id,
+                fromUser: req.sender,
+                status: req.status,
+                createdAt: req.created_at
+            }))
+        };
     },
 
     // 接受好友请求
     acceptFriendRequest: async (requestId: string) => {
-        return apiClient.put(`/friends/requests/${requestId}/accept`);
+        const { getAdminSupabase } = await import('./directAuth');
+        const db = getAdminSupabase();
+
+        const { data: req } = await db.from('friend_requests').select('*').eq('id', requestId).single();
+        if (!req) return { success: false };
+
+        // 更新请求状态
+        await db.from('friend_requests').update({ status: 'accepted' }).eq('id', requestId);
+
+        // 建立好友关系
+        await db.from('friends').insert({ user_id: req.sender_id, friend_id: req.receiver_id });
+
+        return { success: true };
     },
 
     // 删除好友
     deleteFriend: async (friendId: string) => {
-        return apiClient.delete(`/friends/${friendId}`);
+        const userStr = localStorage.getItem('current_user');
+        if (!userStr) return { success: false };
+        const user = JSON.parse(userStr);
+        const { getAdminSupabase } = await import('./directAuth');
+        const db = getAdminSupabase();
+
+        await db.from('friends').delete().match({ user_id: user.id, friend_id: friendId });
+        await db.from('friends').delete().match({ user_id: friendId, friend_id: user.id });
+        return { success: true };
     },
 };
 
-// ========== 消息相关 API ==========
+// ========== 消息相关 API (直连改造) ==========
 
 export const messageAPI = {
     // 获取与某好友的聊天记录
     getMessages: async (friendId: string) => {
-        return apiClient.get(`/messages/${friendId}`);
+        const userStr = localStorage.getItem('current_user');
+        if (!userStr) return { success: false, data: [] };
+        const user = JSON.parse(userStr);
+        const { getAdminSupabase } = await import('./directAuth');
+        const db = getAdminSupabase();
+
+        const { data, error } = await db.from('messages')
+            .select('*')
+            .or(`and(sender_id.eq.${user.id},receiver_id.eq.${friendId}),and(sender_id.eq.${friendId},receiver_id.eq.${user.id})`)
+            .order('created_at', { ascending: true });
+
+        if (error) return { success: false, data: [] };
+
+        return {
+            success: true, data: data.map((m: any) => ({
+                id: m.id,
+                fromUserId: m.sender_id,
+                toUserId: m.receiver_id,
+                content: m.content,
+                role: m.sender_id === user.id ? 'user' : 'friend',
+                isRead: m.is_read,
+                createdAt: m.created_at
+            }))
+        };
     },
 
     // 发送消息
     sendMessage: async (data: { toUserId: string; content: string; role?: 'user' | 'friend' }) => {
-        return apiClient.post('/messages', data);
+        const userStr = localStorage.getItem('current_user');
+        if (!userStr) return { success: false };
+        const user = JSON.parse(userStr);
+        const { getAdminSupabase } = await import('./directAuth');
+        const db = getAdminSupabase();
+
+        const { data: inserted, error } = await db.from('messages').insert({
+            sender_id: user.id,
+            receiver_id: data.toUserId,
+            content: data.content,
+            is_read: false
+        }).select().single();
+
+        if (error) return { success: false, error: error.message };
+
+        return {
+            success: true, data: {
+                id: inserted.id,
+                fromUserId: inserted.sender_id,
+                toUserId: inserted.receiver_id,
+                content: inserted.content,
+                role: 'user',
+                isRead: false,
+                createdAt: inserted.created_at
+            }
+        };
     },
 
     // 标记消息已读
     markAsRead: async (messageId: string) => {
-        return apiClient.put(`/messages/${messageId}/read`);
+        const { getAdminSupabase } = await import('./directAuth');
+        await getAdminSupabase().from('messages').update({ is_read: true }).eq('id', messageId);
+        return { success: true };
     },
 };
 
-// ========== 管理员相关 API ==========
+// ========== 管理员相关 API (直连改造) ==========
 
 export const adminAPI = {
     // 获取所有用户列表
     getAllUsers: async () => {
-        return apiClient.get('/admin/users');
+        const { getAdminSupabase } = await import('./directAuth');
+        const { data, error } = await getAdminSupabase().from('users').select('*').order('created_at', { ascending: false });
+        if (error) return { success: false, data: [] };
+        return { success: true, data: data };
     },
 
     // 获取统计数据
     getStats: async () => {
-        return apiClient.get('/admin/stats');
+        const { getAdminSupabase } = await import('./directAuth');
+        const db = getAdminSupabase();
+
+        const { count: userCount } = await db.from('users').select('*', { count: 'exact', head: true });
+        const { count: postCount } = await db.from('posts').select('*', { count: 'exact', head: true });
+        const { count: exerciseCount } = await db.from('exercises').select('*', { count: 'exact', head: true });
+        const { count: likeCount } = await db.from('post_likes').select('*', { count: 'exact', head: true });
+
+        return {
+            success: true, data: {
+                totalUsers: userCount || 0,
+                totalPosts: postCount || 0,
+                totalExercises: exerciseCount || 0,
+                totalLikes: likeCount || 0
+            }
+        };
     },
 
-    // 文件上传
+    // 文件上传 (占位，原本由 App.tsx 内部直传)
     upload: async (file: File, onUploadProgress?: (progressEvent: any) => void) => {
-        const formData = new FormData();
-        formData.append('file', file);
-        return apiClient.post('/admin/upload', formData, {
-            headers: {
-                'Content-Type': 'multipart/form-data'
-            },
-            onUploadProgress
-        });
+        return { success: true, url: '' }; // 已在前端通过 supabase.storage 直接处理
     },
 
     // 管理员消息相关
     messages: {
-        // 发送管理员消息
+        // 发送管理员消息 (发送给用户系统消息)
         send: async (toUserId: string, content: string) => {
-            return apiClient.post('/admin/messages', { toUserId, content });
+            const { getAdminSupabase } = await import('./directAuth');
+            await getAdminSupabase().from('admin_messages').insert({ user_id: toUserId, content: content });
+            return { success: true };
         },
         // 获取管理员消息历史
         getHistory: async (userId: string) => {
-            return apiClient.get(`/admin/messages/${userId}`);
+            const { getAdminSupabase } = await import('./directAuth');
+            const { data } = await getAdminSupabase().from('admin_messages').select('*').eq('user_id', userId).order('created_at', { ascending: true });
+            return { success: true, data: data || [] };
         },
     },
 
@@ -381,30 +522,41 @@ export const adminAPI = {
     announcements: {
         // 发布公告
         publish: async (title: string, content: string) => {
-            return apiClient.post('/admin/announcements', { title, content });
+            const { getAdminSupabase } = await import('./directAuth');
+            const { error } = await getAdminSupabase().from('announcements').insert({ title, content });
+            return { success: !error };
         },
         // 删除公告
         delete: async (id: string) => {
-            return apiClient.delete(`/admin/announcements/${id}`);
+            const { getAdminSupabase } = await import('./directAuth');
+            const { error } = await getAdminSupabase().from('announcements').delete().eq('id', id);
+            return { success: !error };
         },
     },
 
     // 删除评论
     deleteComment: async (commentId: string) => {
-        return apiClient.delete(`/admin/comments/${commentId}`);
+        const { getAdminSupabase } = await import('./directAuth');
+        const { error } = await getAdminSupabase().from('comments').delete().eq('id', commentId);
+        return { success: !error };
     },
 
     // 封禁/解封用户
     toggleUserBan: async (userId: string, isBanned: boolean) => {
-        return apiClient.put(`/admin/users/${userId}/ban`, { isBanned });
+        const { getAdminSupabase } = await import('./directAuth');
+        const { error } = await getAdminSupabase().from('users').update({ is_banned: isBanned }).eq('id', userId);
+        return { success: !error, message: `操作${!error ? '成功' : '失败'}` };
     }
 };
 
-// ========== 公告 API (用户侧) ==========
+// ========== 公告 API (用户侧) (直连改造) ==========
 export const announcementAPI = {
     // 获取所有公告
     getAll: async () => {
-        return apiClient.get('/announcements');
+        const { getAdminSupabase } = await import('./directAuth');
+        const { data, error } = await getAdminSupabase().from('announcements').select('*').order('created_at', { ascending: false });
+        if (error) return { success: false, data: [] };
+        return { success: true, data: data };
     }
 };
 
@@ -510,16 +662,35 @@ export const exerciseAPI = {
     }
 };
 
-// ========== 游戏排行榜 API ==========
+// ========== 游戏排行榜 API (直连改造) ==========
 export const gameAPI = {
     // 获取某个游戏的排行榜
     getLeaderboard: async (gameType: string) => {
-        return apiClient.get(`/games/scores/${gameType}`);
+        const { getAdminSupabase } = await import('./directAuth');
+        const { data, error } = await getAdminSupabase().from('game_scores')
+            .select('score, created_at, users(name, avatar)')
+            .eq('game_type', gameType)
+            .order('score', { ascending: false })
+            .limit(50);
+
+        if (error) return { success: false, data: [] };
+        return {
+            success: true, data: data.map((s: any) => ({
+                user: s.users,
+                score: s.score,
+                createdAt: s.created_at
+            }))
+        };
     },
 
     // 提交游戏分数
     submitScore: async (data: { game_type: string; score: number }) => {
-        return apiClient.post('/games/scores', data);
+        const userStr = localStorage.getItem('current_user');
+        if (!userStr) return { success: false };
+        const user = JSON.parse(userStr);
+        const { getAdminSupabase } = await import('./directAuth');
+        await getAdminSupabase().from('game_scores').insert({ user_id: user.id, game_type: data.game_type, score: data.score });
+        return { success: true };
     }
 };
 
