@@ -192,20 +192,37 @@ export const postAPI = {
 
         const db = getAdminSupabase();
 
-        // 简单获取 post，前端按点赞和评论拼接
         const { data: posts, error } = await db.from('posts')
             .select(`
                 *,
-                author:users(name, avatar),
+                author:users!posts_author_id_fkey(name, avatar),
                 post_likes(id, user_id),
-                comments(id, content, author_id, created_at, users(name))
+                comments(id, content, author_id, created_at)
             `)
             .order('created_at', { ascending: false })
             .range((page - 1) * limit, page * limit - 1);
 
-        if (error) return { success: false, data: [] };
+        if (error) {
+            console.error('getPosts error:', error.message);
+            return { success: false, data: [] };
+        }
 
-        // 格式化数据以匹配原 Vue/React 组件期待的格式
+        const currentUserId = (() => {
+            try { return JSON.parse(localStorage.getItem('current_user') || '{}').id || ''; }
+            catch { return ''; }
+        })();
+
+        // 批量获取评论作者名字
+        const allAuthorIds = [...new Set((posts || []).flatMap((p: any) =>
+            (p.comments || []).map((c: any) => c.author_id).filter(Boolean)
+        ))];
+
+        let authorMap: Record<string, { name: string; avatar: string }> = {};
+        if (allAuthorIds.length > 0) {
+            const { data: authorData } = await db.from('users').select('id, name, avatar').in('id', allAuthorIds);
+            for (const u of authorData || []) authorMap[u.id] = u;
+        }
+
         const formattedPosts = (posts || []).map((p: any) => ({
             id: p.id,
             author: p.author?.name || '未知用户',
@@ -213,13 +230,14 @@ export const postAPI = {
             time: new Date(p.created_at).toLocaleString(),
             content: p.content,
             fullContent: p.full_content,
-            image: p.image_url,
+            image: p.image,  // DB真实字段名是 image 不是 image_url
             likes: p.post_likes?.length || 0,
-            hasLiked: p.post_likes?.some((l: any) => l.user_id === (localStorage.getItem('current_user') ? JSON.parse(localStorage.getItem('current_user')!).id : '')),
+            hasLiked: (p.post_likes || []).some((l: any) => l.user_id === currentUserId),
             commentsCount: p.comments?.length || 0,
             comments: (p.comments || []).map((c: any) => ({
                 id: c.id,
-                author: c.users?.name || '用户',
+                author: authorMap[c.author_id]?.name || '用户',
+                avatar: authorMap[c.author_id]?.avatar || '',
                 time: new Date(c.created_at).toLocaleString(),
                 content: c.content
             }))
@@ -234,12 +252,11 @@ export const postAPI = {
         if (!userStr) return { success: false, error: '未登录' };
         const user = JSON.parse(userStr);
 
-
         const newPost = {
-            user_id: user.id,
+            author_id: user.id,  // DB真实字段名是 author_id
             content: data.content,
             full_content: data.fullContent || '',
-            image_url: data.image || ''
+            image: data.image || ''  // DB真实字段名是 image
         };
 
         const { error } = await getAdminSupabase().from('posts').insert(newPost);
@@ -253,8 +270,8 @@ export const postAPI = {
         if (!userStr) return { success: false };
         const user = JSON.parse(userStr);
 
-        await getAdminSupabase().from('post_likes').insert({ post_id: postId, user_id: user.id });
-        return { success: true };
+        const { error } = await getAdminSupabase().from('post_likes').insert({ post_id: postId, user_id: user.id });
+        return { success: !error };
     },
 
     // 取消点赞
@@ -267,17 +284,19 @@ export const postAPI = {
         return { success: true };
     },
 
-    // 添加评论
+    // 添加评论 - 使用 author_id（DB真实字段名）
     addComment: async (postId: string, data: { content: string; parentCommentId?: string }) => {
         const userStr = localStorage.getItem('current_user');
-        if (!userStr) return { success: false };
+        if (!userStr) return { success: false, error: '未登录' };
         const user = JSON.parse(userStr);
 
-        await getAdminSupabase().from('comments').insert({
+        const { error } = await getAdminSupabase().from('comments').insert({
             post_id: postId,
-            user_id: user.id,
-            content: data.content
+            author_id: user.id,  // DB真实字段是 author_id，不是 user_id
+            content: data.content,
+            parent_comment_id: data.parentCommentId || null
         });
+        if (error) return { success: false, error: error.message };
         return { success: true };
     },
 
@@ -288,7 +307,6 @@ export const postAPI = {
 
     // 删除动态
     deletePost: async (postId: string) => {
-
         await getAdminSupabase().from('posts').delete().eq('id', postId);
         return { success: true };
     }
@@ -305,41 +323,66 @@ export const friendAPI = {
 
         const db = getAdminSupabase();
 
-        // 好友关系在 friends 表中（单条或双向视实现而定，一般前端做双向查询）
-        const { data: friends1 } = await db.from('friends').select('friend_id, friend:users!friends_friend_id_fkey(*)').eq('user_id', user.id);
-        const { data: friends2 } = await db.from('friends').select('user_id, friend:users!friends_user_id_fkey(*)').eq('friend_id', user.id);
+        const { data: friends1, error: e1 } = await db.from('friends')
+            .select('friend_id')
+            .eq('user_id', user.id);
 
-        const allFriends = [
-            ...(friends1 || []).map((f: any) => f.friend),
-            ...(friends2 || []).map((f: any) => f.friend)
-        ];
+        const { data: friends2, error: e2 } = await db.from('friends')
+            .select('user_id')
+            .eq('friend_id', user.id);
 
-        // 去重并格式化
-        const uniqueFriendsMap = new Map();
-        for (const f of allFriends) {
-            if (f && !uniqueFriendsMap.has(f.id)) uniqueFriendsMap.set(f.id, f);
-        }
+        const friendIds = [
+            ...(friends1 || []).map((f: any) => f.friend_id),
+            ...(friends2 || []).map((f: any) => f.user_id)
+        ].filter(Boolean);
 
-        return { success: true, data: Array.from(uniqueFriendsMap.values()) };
+        const uniqueIds = [...new Set(friendIds)];
+        if (uniqueIds.length === 0) return { success: true, data: [] };
+
+        const { data: users } = await db.from('users')
+            .select('id, name, avatar, motto, phone, last_active')
+            .in('id', uniqueIds);
+
+        return { success: true, data: users || [] };
     },
 
-    // 发送好友请求
+    // 发送好友请求 - friend_requests表字段: from_user_id, to_phone, status
     sendFriendRequest: async (toPhone: string) => {
         const userStr = localStorage.getItem('current_user');
-        if (!userStr) return { success: false, error: '未登录' };
+        if (!userStr) { alert('未登录'); return { success: false, error: '未登录' }; }
         const user = JSON.parse(userStr);
 
         const db = getAdminSupabase();
 
         // 查找目标用户
-        const { data: targetUser } = await db.from('users').select('id').eq('phone', toPhone).single();
-        if (!targetUser) return { success: false, error: '用户不存在' };
+        const { data: targets } = await db.from('users').select('id, name').eq('phone', toPhone).limit(1);
+        if (!targets || targets.length === 0) return { success: false, error: '用户不存在' };
+        const targetUser = targets[0];
         if (targetUser.id === user.id) return { success: false, error: '不能添加自己' };
 
-        // 检查是否已是好友或已有请求
-        const { error } = await db.from('friend_requests').insert({ sender_id: user.id, receiver_id: targetUser.id, status: 'pending' });
+        // 检查是否已是好友
+        const { data: existingFriend } = await db.from('friends')
+            .select('id')
+            .or(`and(user_id.eq.${user.id},friend_id.eq.${targetUser.id}),and(user_id.eq.${targetUser.id},friend_id.eq.${user.id})`)
+            .limit(1);
+        if (existingFriend && existingFriend.length > 0) return { success: false, error: '已是好友' };
+
+        // 检查是否已有请求  - friend_requests字段: from_user_id, to_phone
+        const { data: existingReq } = await db.from('friend_requests')
+            .select('id')
+            .eq('from_user_id', user.id)
+            .eq('to_phone', toPhone)
+            .eq('status', 'pending')
+            .limit(1);
+        if (existingReq && existingReq.length > 0) return { success: false, error: '已发送请求，等待对方确认' };
+
+        const { error } = await db.from('friend_requests').insert({
+            from_user_id: user.id,
+            to_phone: toPhone,
+            status: 'pending'
+        });
         if (error) return { success: false, error: error.message };
-        return { success: true };
+        return { success: true, message: '好友请求已发送' };
     },
 
     // 获取好友请求列表
@@ -348,20 +391,28 @@ export const friendAPI = {
         if (!userStr) return { success: false, data: [] };
         const user = JSON.parse(userStr);
 
-
+        // friend_requests表: from_user_id, to_phone - 按当前用户手机号查询振入的请求
         const { data, error } = await getAdminSupabase()
             .from('friend_requests')
-            .select('id, sender_id, status, created_at, sender:users!friend_requests_sender_id_fkey(name, avatar, phone)')
-            .eq('receiver_id', user.id)
+            .select('id, from_user_id, status, created_at')
+            .eq('to_phone', user.phone)
             .eq('status', 'pending');
 
-        if (error) return { success: false, data: [] };
+        if (error || !data) return { success: false, data: [] };
+
+        // 获取请求人的详细信息
+        const fromUserIds = data.map((r: any) => r.from_user_id);
+        const { data: fromUsers } = await getAdminSupabase().from('users')
+            .select('id, name, avatar, phone')
+            .in('id', fromUserIds);
+
+        const fromUserMap = Object.fromEntries((fromUsers || []).map((u: any) => [u.id, u]));
 
         return {
             success: true, data: data.map((req: any) => ({
                 id: req.id,
-                fromUserId: req.sender_id,
-                fromUser: req.sender,
+                fromUserId: req.from_user_id,
+                fromUser: fromUserMap[req.from_user_id],
                 status: req.status,
                 createdAt: req.created_at
             }))
@@ -370,6 +421,9 @@ export const friendAPI = {
 
     // 接受好友请求
     acceptFriendRequest: async (requestId: string) => {
+        const userStr = localStorage.getItem('current_user');
+        if (!userStr) return { success: false };
+        const user = JSON.parse(userStr);
 
         const db = getAdminSupabase();
 
@@ -379,8 +433,8 @@ export const friendAPI = {
         // 更新请求状态
         await db.from('friend_requests').update({ status: 'accepted' }).eq('id', requestId);
 
-        // 建立好友关系
-        await db.from('friends').insert({ user_id: req.sender_id, friend_id: req.receiver_id });
+        // 建立好友关系（双向）
+        await db.from('friends').insert({ user_id: req.from_user_id, friend_id: user.id });
 
         return { success: true };
     },
@@ -410,20 +464,21 @@ export const messageAPI = {
 
         const db = getAdminSupabase();
 
+        // DB 真实字段: from_user_id, to_user_id, role, content
         const { data, error } = await db.from('messages')
             .select('*')
-            .or(`and(sender_id.eq.${user.id},receiver_id.eq.${friendId}),and(sender_id.eq.${friendId},receiver_id.eq.${user.id})`)
+            .or(`and(from_user_id.eq.${user.id},to_user_id.eq.${friendId}),and(from_user_id.eq.${friendId},to_user_id.eq.${user.id})`)
             .order('created_at', { ascending: true });
 
-        if (error) return { success: false, data: [] };
+        if (error) { console.error('getMessages error:', error.message); return { success: false, data: [] }; }
 
         return {
-            success: true, data: data.map((m: any) => ({
+            success: true, data: (data || []).map((m: any) => ({
                 id: m.id,
-                fromUserId: m.sender_id,
-                toUserId: m.receiver_id,
+                fromUserId: m.from_user_id,
+                toUserId: m.to_user_id,
                 content: m.content,
-                role: m.sender_id === user.id ? 'user' : 'friend',
+                role: m.from_user_id === user.id ? 'user' : 'friend',
                 isRead: m.is_read,
                 createdAt: m.created_at
             }))
@@ -433,25 +488,27 @@ export const messageAPI = {
     // 发送消息
     sendMessage: async (data: { toUserId: string; content: string; role?: 'user' | 'friend' }) => {
         const userStr = localStorage.getItem('current_user');
-        if (!userStr) return { success: false };
+        if (!userStr) return { success: false, error: '未登录' };
         const user = JSON.parse(userStr);
 
         const db = getAdminSupabase();
 
+        // DB 真实字段: from_user_id, to_user_id
         const { data: inserted, error } = await db.from('messages').insert({
-            sender_id: user.id,
-            receiver_id: data.toUserId,
+            from_user_id: user.id,
+            to_user_id: data.toUserId,
             content: data.content,
+            role: 'user',
             is_read: false
         }).select().single();
 
-        if (error) return { success: false, error: error.message };
+        if (error) { console.error('sendMessage error:', error.message); return { success: false, error: error.message }; }
 
         return {
             success: true, data: {
                 id: inserted.id,
-                fromUserId: inserted.sender_id,
-                toUserId: inserted.receiver_id,
+                fromUserId: inserted.from_user_id,
+                toUserId: inserted.to_user_id,
                 content: inserted.content,
                 role: 'user',
                 isRead: false,
@@ -462,7 +519,6 @@ export const messageAPI = {
 
     // 标记消息已读
     markAsRead: async (messageId: string) => {
-
         await getAdminSupabase().from('messages').update({ is_read: true }).eq('id', messageId);
         return { success: true };
     },
@@ -504,18 +560,28 @@ export const adminAPI = {
         return { success: true, url: '' }; // 已在前端通过 supabase.storage 直接处理
     },
 
-    // 管理员消息相关
+    // 管理员消息相关 - 使用存在的 messages 表
     messages: {
-        // 发送管理员消息 (发送给用户系统消息)
+        // 发送管理员消息 (发给用户系统消息)
         send: async (toUserId: string, content: string) => {
-
-            await getAdminSupabase().from('admin_messages').insert({ user_id: toUserId, content: content });
-            return { success: true };
+            // admin_messages 表不存在, 用 messages 表代替，发布一条现有约定的管理员系统消息
+            const adminId = 'system'; // 管理员使用特殊标识
+            const { error } = await getAdminSupabase().from('messages').insert({
+                from_user_id: '00000000-0000-0000-0000-000000000000', // 系统消息用全0 UUID
+                to_user_id: toUserId,
+                content: content,
+                role: 'admin',
+                is_read: false
+            });
+            return { success: !error, error: error?.message };
         },
         // 获取管理员消息历史
         getHistory: async (userId: string) => {
-
-            const { data } = await getAdminSupabase().from('admin_messages').select('*').eq('user_id', userId).order('created_at', { ascending: true });
+            const { data } = await getAdminSupabase().from('messages')
+                .select('*')
+                .eq('to_user_id', userId)
+                .eq('role', 'admin')
+                .order('created_at', { ascending: true });
             return { success: true, data: data || [] };
         },
     },
