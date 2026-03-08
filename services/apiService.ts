@@ -88,26 +88,30 @@ export interface AdminLoginData {
 }
 
 export const authAPI = {
-    // 用户注册
+    // 用户注册 - 直接通过 Supabase 处理，无需后端
     register: async (data: RegisterData) => {
-        return apiClient.post('/auth/register', data);
+        const { directAuthAPI } = await import('./directAuth');
+        return directAuthAPI.register(data as any);
     },
 
-    // 用户登录
+    // 用户登录 - 直接通过 Supabase 处理，无需后端
     login: async (data: LoginData) => {
-        return apiClient.post('/auth/login', data);
+        const { directAuthAPI } = await import('./directAuth');
+        return directAuthAPI.login(data);
     },
 
-    // 管理员登录
+    // 管理员登录 - 直接通过 Supabase 处理，无需后端
     adminLogin: async (data: AdminLoginData) => {
-        return apiClient.post('/auth/admin-login', data);
+        const { directAuthAPI } = await import('./directAuth');
+        return directAuthAPI.adminLogin(data);
     },
 
     // 登出
     logout: async () => {
-        return apiClient.post('/auth/logout');
+        return { success: true, message: '登出成功' };
     },
 };
+
 
 // ========== 用户相关 API ==========
 
