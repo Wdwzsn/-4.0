@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { VIDEO_DATA } from '../constants';
 import { VideoContent, ExerciseStep, ExerciseChapter } from '../types';
+import API from '../services/apiService';
 
 interface VideoCardProps {
   video: VideoContent;
@@ -43,7 +44,6 @@ const ArticleOverlay: React.FC<{ video: VideoContent; onClose: () => void }> = (
   const handleLike = async () => {
     if (isLiked) return;
     try {
-      const { default: API } = await import('../services/apiService');
       const res: any = await API.exercise.toggleLike(video.id);
       if (res.success) {
         setLikes(res.likes);
@@ -352,30 +352,29 @@ export const ExerciseSection: React.FC = () => {
 
   useEffect(() => {
     // 从后端拉取管理员添加的功法，追加到本地内置互动功法之后
-    import('../services/apiService').then(({ default: API }) => {
-      API.exercise.getExercises().then((res: any) => {
-        if (res.success && res.data && res.data.length > 0) {
-          // 将后端数据转换为前端格式
-          const remoteData = res.data.map((item: any) => ({
-            id: item.id,
-            title: item.title,
-            category: item.category,
-            thumbnail: item.thumbnail,
-            description: item.description,
-            views: item.views,
-            articleBody: item.article_body,
-            // 后端管理员上传的功法可能有 video_url
-            videoUrl: item.video_url,
-            chapters: item.chapters
-          }));
-          // 拼接在本地数据之后，以免覆盖本地带动画的互动功法
-          setVideos([...VIDEO_DATA, ...remoteData]);
-        }
-        // 如果后端空数据，保留 VIDEO_DATA（默认值已设置）
-      }).catch(err => {
-        console.error('获取后端功法失败，使用默认配置', err);
-        // 失败时保持默认本地数据，不做任何修改
-      });
+    API.exercise.getExercises().then((res: any) => {
+      if (res.success && res.data && res.data.length > 0) {
+        // 将后端数据转换为前端格式
+        const remoteData = res.data.map((item: any) => ({
+          id: item.id,
+          title: item.title,
+          category: item.type || item.category || '功法',
+          // API 返回的是 thumbnailUrl字段
+          thumbnail: item.thumbnailUrl || item.thumbnail || 'https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?fit=crop&q=80',
+          description: item.description || '',
+          views: item.views || 0,
+          articleBody: item.articleBody,
+          videoUrl: item.videoUrl,
+          chapters: item.chapters,
+          likes: item.likes || 0
+        }));
+        // 拼接在本地数据之后，以免覆盖本地带动画的互动功法
+        setVideos([...VIDEO_DATA, ...remoteData]);
+      }
+      // 如果后端空数据，保留 VIDEO_DATA（默认值已设置）
+    }).catch((err: any) => {
+      console.error('获取后端功法失败，使用默认配置', err);
+      // 失败时保持默认本地数据，不做任何修改
     });
   }, []);
 

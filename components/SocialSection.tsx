@@ -151,7 +151,7 @@ export const SocialSection: React.FC<{ currentUser: UserAccount | null }> = ({ c
             const loadedPosts = response.data.posts.map((p: any) => ({
               id: p.id,
               author: p.author,
-              authorId: p.authorId,
+              authorId: p.authorId || '',  // API返回的字段
               avatar: p.avatar,
               content: p.content,
               likes: p.likes || 0,
@@ -159,14 +159,14 @@ export const SocialSection: React.FC<{ currentUser: UserAccount | null }> = ({ c
               likedBy: p.likedBy || [],
               likedByIds: p.likedByIds || [],
               time: p.time,
-              comments: p.comments.map((c: any) => ({
+              comments: (p.comments || []).map((c: any) => ({
                 id: c.id,
                 author: c.author,
                 content: c.content,
                 time: c.time
               })),
-              isUserPost: p.authorId === currentUser?.id,
-              isLiked: (p.likedByIds || []).includes(currentUser?.id)
+              isUserPost: currentUser?.id ? p.avatar === currentUser?.avatar : false,
+              isLiked: p.hasLiked || false  // API返回的是 hasLiked，不是 isLiked
             }));
             setPosts(loadedPosts);
           }
@@ -269,11 +269,11 @@ export const SocialSection: React.FC<{ currentUser: UserAccount | null }> = ({ c
           if (res.success) {
             setMessages(res.data.map((m: any) => ({
               id: m.id,
-              role: m.fromId === currentUser?.id ? 'user' : 'friend',
-              fromId: m.fromId,
-              toId: m.toId,
+              role: m.fromUserId === currentUser?.id ? 'user' : 'friend',  // API返回 fromUserId
+              fromId: m.fromUserId,   // 映射正确字段
+              toId: m.toUserId,
               content: m.content,
-              timestamp: m.timestamp // Backend returns number
+              timestamp: m.createdAt ? new Date(m.createdAt).getTime() : Date.now()
             })));
           }
         } catch (error) {
@@ -361,12 +361,17 @@ export const SocialSection: React.FC<{ currentUser: UserAccount | null }> = ({ c
     setIsSearching(true);
     try {
       const res: any = await API.user.searchUserByPhone(phone);
-      if (res.success && res.data) {
+      // 搜索返回数组，取第一个结果
+      const userData = Array.isArray(res.data) ? res.data[0] : res.data;
+      if (res.success && userData) {
         setFoundProfile({
-          ...res.data,
-          status: 'online', // 默认状态，或者从 search 结果获取
+          ...userData,
+          phone: phone,  // 确保 phone 字段存在
+          status: 'online',
           isRealUser: true
         });
+      } else {
+        setSearchError('未找到该用户');
       }
     } catch (error: any) {
       setSearchError(error.message || '搜索失败，请重试');
@@ -641,18 +646,25 @@ export const SocialSection: React.FC<{ currentUser: UserAccount | null }> = ({ c
                     <input value={commentText} onChange={e => setCommentText(e.target.value)} placeholder="我也来说两句..." className="flex-1 bg-slate-50 dark:bg-slate-700/50 px-5 h-12 rounded-2xl outline-none dark:text-white border dark:border-slate-600" />
                     <button onClick={async () => {
                       if (!commentText.trim() || !currentUser) return;
+                      const tempComment = commentText;
+                      setCommentText('');
+                      setCommentingPostId(null);
                       try {
-                        const res: any = await API.post.addComment(post.id, { content: commentText });
-                        if (res.success && res.data) {
-                          // 后端返回的 data 是评论对象
+                        const res: any = await API.post.addComment(post.id, { content: tempComment });
+                        if (res.success) {
+                          // API 只返回 success，自己构建comment对象添加到列表
                           const newComm: Comment = {
-                            id: res.data.id,
-                            author: res.data.author,
-                            content: res.data.content,
-                            time: res.data.time
+                            id: 'temp_' + Date.now(),
+                            author: currentUser.name || '我',
+                            content: tempComment,
+                            time: new Date().toLocaleString()
                           };
-                          const updated = posts.map(p => p.id === post.id ? { ...p, comments: [...p.comments, newComm] } : p);
-                          setPosts(updated); setCommentText(''); setCommentingPostId(null);
+                          setPosts(prev => prev.map(p => p.id === post.id
+                            ? { ...p, comments: [...p.comments, newComm], commentsCount: (p.commentsCount || 0) + 1 }
+                            : p
+                          ));
+                        } else {
+                          alert(res.error || '评论失败');
                         }
                       } catch (e) {
                         alert('评论失败');

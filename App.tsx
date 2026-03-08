@@ -700,8 +700,8 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
                             onClick={() => {
                               setEditingExercise({
                                 ...ex,
-                                videoUrl: ex.video_url,
-                                articleBody: ex.article_body
+                                videoUrl: ex.videoUrl,       // API 已格式化返回 videoUrl
+                                articleBody: ex.articleBody  // API 已格式化返回 articleBody
                               });
                               setIsEditingExercise(true);
                             }}
