@@ -170,12 +170,12 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
 
   const onlineCount = useMemo(() => {
     const now = Date.now();
-    return users.filter(u => u.last_active && (now - new Date(u.last_active).getTime()) < 600000).length;
+    return users.filter(u => u.last_active && (now - new Date(u.last_active).getTime()) < 180000).length;
   }, [users]);
 
   const checkOnline = (u: any) => {
     if (!u.last_active) return false;
-    return (Date.now() - new Date(u.last_active).getTime()) < 600000;
+    return (Date.now() - new Date(u.last_active).getTime()) < 180000;
   };
 
   const handleSaveExercise = async (e: React.FormEvent) => {
@@ -324,6 +324,8 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
       if (res.success) {
         setChatMsgList([...chatMsgList, res.data]);
         setInputMsg('');
+      } else {
+        alert('发送失败: ' + (res.error || '服务器拒绝了请求'));
       }
     } catch (e) {
       alert('发送失败');
@@ -1417,7 +1419,7 @@ const App: React.FC = () => {
       API.user.updateActivity(); // 初次上报
       const timer = setInterval(() => {
         API.user.updateActivity();
-      }, 60000); // 每分钟上报一次
+      }, 30000); // 提升至每 30 秒上报一次
       return () => clearInterval(timer);
     }
   }, [currentUser]);

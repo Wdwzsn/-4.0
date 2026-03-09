@@ -242,20 +242,13 @@ export const SocialSection: React.FC<{ currentUser: UserAccount | null }> = ({ c
             })));
           }
 
-          // 检查管理员消息是否有更新 (简化逻辑：检查最后一条消息时间)
-          const msgRes: any = await API.message.getMessages('a8b8f3ff-c973-46d9-b068-e87131e9b65e');
-          if (msgRes.success && msgRes.data.length > 0) {
-            const lastMsg = msgRes.data[msgRes.data.length - 1];
-            if (lastMsg.fromId !== currentUser.id) {
-              // 如果最后一条是管理员发的，且还没在当前会话点开过，显示红点
-              setAdminUnread(true);
-            }
-          }
-
           // 加载未读消息数
           const unreadRes: any = await API.message.getUnreadCounts();
           if (unreadRes.success) {
-            setUnreadCounts(unreadRes.data || {});
+            const counts = unreadRes.data || {};
+            setUnreadCounts(counts);
+            // 同步 adminUnread 状态，如果管理员 ID 有未读，则为 true
+            setAdminUnread(!!counts['a8b8f3ff-c973-46d9-b068-e87131e9b65e']);
           }
         } catch (e) {
           console.error('加载好友数据失败', e);
@@ -788,7 +781,7 @@ export const SocialSection: React.FC<{ currentUser: UserAccount | null }> = ({ c
                   <div className="relative cursor-pointer shrink-0" onClick={() => handleStartChat(f)}>
                     <img src={f.avatar} className={`w-16 h-16 md:w-20 md:h-20 rounded-full border-4 shadow-lg object-cover ${f.isRealUser ? (online ? 'border-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.4)]' : 'border-amber-400') : 'border-slate-100'}`} />
                     {online && <div className="absolute bottom-1 right-1 w-5 h-5 bg-emerald-500 rounded-full border-2 border-white animate-pulse" />}
-                    {(f.id === 'a8b8f3ff-c973-46d9-b068-e87131e9b65e' && adminUnread) || (unreadCounts[f.id] || 0) > 0 ? (
+                    {(unreadCounts[f.id] || 0) > 0 ? (
                       <div className="absolute -top-1 -right-1 w-6 h-6 bg-red-600 rounded-full border-4 border-white dark:border-slate-800 flex items-center justify-center text-[10px] text-white font-black animate-pulse shadow-lg">!</div>
                     ) : null}
                   </div>

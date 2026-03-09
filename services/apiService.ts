@@ -530,10 +530,15 @@ export const messageAPI = {
         const user = JSON.parse(userStr);
         const db = getAdminSupabase();
 
+        // 如果是管理员头像 ID，我们要标记来自系统全 0 ID 的消息为已读
+        const targetFromId = (friendId === 'a8b8f3ff-c973-46d9-b068-e87131e9b65e')
+            ? '00000000-0000-0000-0000-000000000000'
+            : friendId;
+
         await db.from('messages')
             .update({ is_read: true })
             .eq('to_user_id', user.id)
-            .eq('from_user_id', friendId)
+            .eq('from_user_id', targetFromId)
             .eq('is_read', false);
         return { success: true };
     },
@@ -554,7 +559,11 @@ export const messageAPI = {
 
         const counts: Record<string, number> = {};
         (data || []).forEach((m: any) => {
-            counts[m.from_user_id] = (counts[m.from_user_id] || 0) + 1;
+            // 如果是系统全 0 ID，映射回管理员 UI ID
+            const key = (m.from_user_id === '00000000-0000-0000-0000-000000000000')
+                ? 'a8b8f3ff-c973-46d9-b068-e87131e9b65e'
+                : m.from_user_id;
+            counts[key] = (counts[key] || 0) + 1;
         });
 
         return { success: true, data: counts };
