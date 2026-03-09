@@ -646,6 +646,26 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
                               >
                                 {u.is_banned ? '解封' : '封禁'}
                               </button>
+                              <button
+                                onClick={async () => {
+                                  if (window.confirm('🚨 危险操作：确定要彻底删除该账号吗？这将清空其所有数据（帖子、评论、点赞、好友等），且无法恢复！')) {
+                                    try {
+                                      const res: any = await API.admin.deleteUser(u.id);
+                                      if (res.success) {
+                                        setUsers(users.filter(user => user.id !== u.id));
+                                        alert('账号彻底删除成功！');
+                                      } else {
+                                        alert('删除失败: ' + res.error);
+                                      }
+                                    } catch (e: any) {
+                                      alert('删除出错: ' + e.message);
+                                    }
+                                  }
+                                }}
+                                className="ml-2 px-4 py-2 rounded-xl font-black text-sm transition-all active:scale-95 bg-slate-600/20 text-slate-400 hover:bg-red-600 hover:text-white"
+                              >
+                                彻底删除
+                              </button>
                             </td>
                           </tr>
                         );
@@ -688,7 +708,7 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
                   <div key={ex.id} className="bg-slate-900/50 rounded-3xl border border-slate-700 overflow-hidden flex flex-col group">
                     <div className="h-48 overflow-hidden relative">
                       <span className="absolute top-4 left-4 bg-black/60 backdrop-blur text-white px-3 py-1 rounded-full text-sm font-black z-10">{ex.category}</span>
-                      <img src={ex.thumbnail} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+                      <img src={ex.thumbnailUrl || ex.thumbnail} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
                     </div>
                     <div className="p-6 flex flex-col flex-1">
                       <h3 className="text-xl font-black mb-2 line-clamp-1">{ex.title}</h3>
@@ -984,6 +1004,7 @@ const AuthScreen: React.FC<{
               lastActive: Date.now(),
               isRealUser: user.is_real_user !== false
             };
+            localStorage.setItem('current_user', JSON.stringify(userAccount));
             onLogin(userAccount);
           }
         } catch (error: any) {
@@ -1051,19 +1072,20 @@ const AuthScreen: React.FC<{
               password: '',
               name: user.name,
               avatar: user.avatar || `https://picsum.photos/seed/${user.name}/400/400`,
-              motto: user.motto,
-              bio: user.bio,
-              age: user.age,
-              gender: user.gender,
-              province: user.province,
+              motto: user.motto || '健康生活，长青不老',
+              bio: user.bio || '暂无介绍',
+              age: user.age || '未知',
+              gender: user.gender || '未设置',
+              province: user.province || '未设置',
               interests: user.interests || [],
               birthday: user.birthday || '未设置',
               routine: user.routine || '每日功法练习',
-              joinedDate: user.joined_date || new Date().getFullYear().toString(),
-              streak: user.streak ?? 0,
+              joinedDate: new Date().getFullYear().toString(),
+              streak: 0,
               lastActive: Date.now(),
               isRealUser: true
             };
+            localStorage.setItem('current_user', JSON.stringify(userAccount));
             onLogin(userAccount);
           }
         } catch (error: any) {

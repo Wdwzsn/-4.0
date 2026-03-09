@@ -611,9 +611,14 @@ export const adminAPI = {
 
     // 封禁/解封用户
     toggleUserBan: async (userId: string, isBanned: boolean) => {
-
         const { error } = await getAdminSupabase().from('users').update({ is_banned: isBanned }).eq('id', userId);
         return { success: !error, message: `操作${!error ? '成功' : '失败'}` };
+    },
+
+    // 彻底删除账号 (基于 Supabase ON DELETE CASCADE 会自动清理关联的所有发帖/评论/点赞/好友数据)
+    deleteUser: async (userId: string) => {
+        const { error } = await getAdminSupabase().from('users').delete().eq('id', userId);
+        return { success: !error, error: error?.message };
     }
 };
 
