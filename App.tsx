@@ -170,12 +170,12 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
 
   const onlineCount = useMemo(() => {
     const now = Date.now();
-    return users.filter(u => u.lastActive && (now - u.lastActive) < 600000).length;
+    return users.filter(u => u.last_active && (now - new Date(u.last_active).getTime()) < 600000).length;
   }, [users]);
 
-  const checkOnline = (u: UserAccount) => {
-    if (!u.lastActive) return false;
-    return (Date.now() - u.lastActive) < 600000;
+  const checkOnline = (u: any) => {
+    if (!u.last_active) return false;
+    return (Date.now() - new Date(u.last_active).getTime()) < 600000;
   };
 
   const handleSaveExercise = async (e: React.FormEvent) => {
@@ -184,9 +184,11 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
     setIsSaving(true);
     try {
       if (editingExercise.id) {
-        await API.exercise.updateExercise(editingExercise.id, editingExercise);
+        const res: any = await API.exercise.updateExercise(editingExercise.id, editingExercise);
+        if (!res.success) throw new Error(res.error || '更新失败');
       } else {
-        await API.exercise.createExercise(editingExercise);
+        const res: any = await API.exercise.createExercise(editingExercise);
+        if (!res.success) throw new Error(res.error || '创建失败');
       }
       setIsEditingExercise(false);
       setEditingExercise(null);

@@ -517,10 +517,47 @@ export const messageAPI = {
         };
     },
 
-    // 标记消息已读
+    // 标记单条消息已读
     markAsRead: async (messageId: string) => {
         await getAdminSupabase().from('messages').update({ is_read: true }).eq('id', messageId);
         return { success: true };
+    },
+
+    // 标记与某好友的聊天全部已读
+    markChatAsRead: async (friendId: string) => {
+        const userStr = localStorage.getItem('current_user');
+        if (!userStr) return { success: false };
+        const user = JSON.parse(userStr);
+        const db = getAdminSupabase();
+
+        await db.from('messages')
+            .update({ is_read: true })
+            .eq('to_user_id', user.id)
+            .eq('from_user_id', friendId)
+            .eq('is_read', false);
+        return { success: true };
+    },
+
+    // 获取各个好友发来的未读消息数量
+    getUnreadCounts: async () => {
+        const userStr = localStorage.getItem('current_user');
+        if (!userStr) return { success: false, data: {} };
+        const user = JSON.parse(userStr);
+        const db = getAdminSupabase();
+
+        const { data, error } = await db.from('messages')
+            .select('from_user_id')
+            .eq('to_user_id', user.id)
+            .eq('is_read', false);
+
+        if (error) return { success: false, data: {} };
+
+        const counts: Record<string, number> = {};
+        (data || []).forEach((m: any) => {
+            counts[m.from_user_id] = (counts[m.from_user_id] || 0) + 1;
+        });
+
+        return { success: true, data: counts };
     },
 };
 
@@ -565,15 +602,14 @@ export const adminAPI = {
         // 发送管理员消息 (发给用户系统消息)
         send: async (toUserId: string, content: string) => {
             // admin_messages 表不存在, 用 messages 表代替，发布一条现有约定的管理员系统消息
-            const adminId = 'system'; // 管理员使用特殊标识
-            const { error } = await getAdminSupabase().from('messages').insert({
+            const { data, error } = await getAdminSupabase().from('messages').insert({
                 from_user_id: '00000000-0000-0000-0000-000000000000', // 系统消息用全0 UUID
                 to_user_id: toUserId,
                 content: content,
                 role: 'admin',
                 is_read: false
-            });
-            return { success: !error, error: error?.message };
+            }).select().single();
+            return { success: !error, error: error?.message, data: data };
         },
         // 获取管理员消息历史
         getHistory: async (userId: string) => {
@@ -674,7 +710,6 @@ export const exerciseAPI = {
         return { success: true };
     },
 
-    // (管理员) 新增功法
     createExercise: async (data: any) => {
         const db = getAdminSupabase();
         // 仅插入数据库中真实存在的列，否则 Supabase 会报 42703 Column does not exist
@@ -684,6 +719,7 @@ export const exerciseAPI = {
             category: data.type, // 前端传的是 type，DB 叫 category
             video_url: data.videoUrl,
             thumbnail: data.thumbnailUrl, // DB 叫 thumbnail
+            article_body: data.articleBody // 后台长文章正文字段
         });
         return { success: !error, error: error?.message };
     },
@@ -697,6 +733,7 @@ export const exerciseAPI = {
         if (data.type !== undefined) updateData.category = data.type;
         if (data.videoUrl !== undefined) updateData.video_url = data.videoUrl;
         if (data.thumbnailUrl !== undefined) updateData.thumbnail = data.thumbnailUrl;
+        if (data.articleBody !== undefined) updateData.article_body = data.articleBody;
 
         updateData.updated_at = new Date().toISOString();
 

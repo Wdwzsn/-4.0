@@ -134,6 +134,7 @@ export const SocialSection: React.FC<{ currentUser: UserAccount | null }> = ({ c
 
   // 新增：管理员未读消息状态
   const [adminUnread, setAdminUnread] = useState(false);
+  const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
 
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -250,6 +251,12 @@ export const SocialSection: React.FC<{ currentUser: UserAccount | null }> = ({ c
               setAdminUnread(true);
             }
           }
+
+          // 加载未读消息数
+          const unreadRes: any = await API.message.getUnreadCounts();
+          if (unreadRes.success) {
+            setUnreadCounts(unreadRes.data || {});
+          }
         } catch (e) {
           console.error('加载好友数据失败', e);
         } finally {
@@ -342,6 +349,13 @@ export const SocialSection: React.FC<{ currentUser: UserAccount | null }> = ({ c
     if (friend.id === 'a8b8f3ff-c973-46d9-b068-e87131e9b65e') {
       setAdminUnread(false);
     }
+
+    // 清除该好友的红点并标记云端为已读
+    if ((unreadCounts[friend.id] || 0) > 0) {
+      setUnreadCounts(prev => ({ ...prev, [friend.id]: 0 }));
+      API.message.markChatAsRead(friend.id);
+    }
+
     setViewingProfileId(null);
     setFoundProfile(null);
     setSearchPhone('');
@@ -560,7 +574,7 @@ export const SocialSection: React.FC<{ currentUser: UserAccount | null }> = ({ c
         <button onClick={() => setActiveSubTab('feed')} className={`flex-1 min-w-[100px] py-4 text-lg md:text-xl font-black rounded-2xl transition-all ${activeSubTab === 'feed' ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-400'}`}>广场中心</button>
         <button onClick={() => setActiveSubTab('friends')} className={`flex-1 min-w-[100px] py-4 text-lg md:text-xl font-black rounded-2xl transition-all ${activeSubTab === 'friends' ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-400'}`}>
           我的邻居
-          {(myRequests.length > 0 || adminUnread) && <span className="ml-2 bg-red-500 text-white text-[10px] px-2 py-0.5 rounded-full animate-bounce">!</span>}
+          {(myRequests.length > 0 || adminUnread || Object.values(unreadCounts).some((c: any) => c > 0)) && <span className="ml-2 inline-flex items-center justify-center min-w-[20px] h-5 bg-red-500 text-white text-[12px] px-1.5 rounded-full animate-bounce">!</span>}
         </button>
       </div>
 
@@ -774,9 +788,9 @@ export const SocialSection: React.FC<{ currentUser: UserAccount | null }> = ({ c
                   <div className="relative cursor-pointer shrink-0" onClick={() => handleStartChat(f)}>
                     <img src={f.avatar} className={`w-16 h-16 md:w-20 md:h-20 rounded-full border-4 shadow-lg object-cover ${f.isRealUser ? (online ? 'border-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.4)]' : 'border-amber-400') : 'border-slate-100'}`} />
                     {online && <div className="absolute bottom-1 right-1 w-5 h-5 bg-emerald-500 rounded-full border-2 border-white animate-pulse" />}
-                    {f.id === 'a8b8f3ff-c973-46d9-b068-e87131e9b65e' && adminUnread && (
-                      <div className="absolute -top-1 -right-1 w-6 h-6 bg-red-600 rounded-full border-4 border-white dark:border-slate-800 flex items-center justify-center text-[10px] text-white font-black animate-pulse">!</div>
-                    )}
+                    {(f.id === 'a8b8f3ff-c973-46d9-b068-e87131e9b65e' && adminUnread) || (unreadCounts[f.id] || 0) > 0 ? (
+                      <div className="absolute -top-1 -right-1 w-6 h-6 bg-red-600 rounded-full border-4 border-white dark:border-slate-800 flex items-center justify-center text-[10px] text-white font-black animate-pulse shadow-lg">!</div>
+                    ) : null}
                   </div>
                   <div className="flex-1 cursor-pointer overflow-hidden" onClick={() => setChattingFriend(f)}>
                     <h4 className="font-black text-xl md:text-2xl dark:text-white truncate">{f.name}</h4>
