@@ -600,7 +600,18 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
               <div className="bg-slate-800 rounded-[45px] border border-slate-700 shadow-2xl overflow-hidden">
                 <div className="p-8 border-b border-slate-700 flex justify-between items-center bg-slate-800/50">
                   <h2 className="text-2xl font-black">用户管理列表</h2>
-                  <span className="bg-emerald-500/10 text-emerald-500 px-4 py-1 rounded-full text-sm font-black">实时同步数据</span>
+                  <div className="flex space-x-4 items-center">
+                    <button onClick={() => {
+                      setIsLoading(true);
+                      API.admin.getAllUsers().then((res: any) => {
+                        if (res.success) setUsers(res.data);
+                        setIsLoading(false);
+                      });
+                    }} className="bg-blue-500/10 hover:bg-blue-500/30 text-blue-400 px-4 py-1.5 rounded-full text-sm font-black transition-colors flex items-center shadow-sm">
+                      <span className="mr-1">↻</span> 刷新列表在线状态
+                    </button>
+                    <span className="bg-emerald-500/10 text-emerald-500 px-4 py-1 rounded-full text-sm font-black">已获取同步数据</span>
+                  </div>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left">
@@ -1396,6 +1407,17 @@ const App: React.FC = () => {
       };
       fetchAnns();
       const timer = setInterval(fetchAnns, 60000); // 每分钟刷新一次
+      return () => clearInterval(timer);
+    }
+  }, [currentUser]);
+
+  // 定时向服务器上报用户的活跃状态
+  useEffect(() => {
+    if (currentUser) {
+      API.user.updateActivity(); // 初次上报
+      const timer = setInterval(() => {
+        API.user.updateActivity();
+      }, 60000); // 每分钟上报一次
       return () => clearInterval(timer);
     }
   }, [currentUser]);

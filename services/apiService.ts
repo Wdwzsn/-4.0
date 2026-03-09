@@ -716,10 +716,10 @@ export const exerciseAPI = {
         const { error } = await db.from('exercises').insert({
             title: data.title,
             description: data.description,
-            category: data.type, // 前端传的是 type，DB 叫 category
-            video_url: data.videoUrl,
-            thumbnail: data.thumbnailUrl, // DB 叫 thumbnail
-            article_body: data.articleBody // 后台长文章正文字段
+            category: data.category || data.type, // 前端传的是 type 或 category，DB 叫 category
+            video_url: data.videoUrl || data.video_url,
+            thumbnail: data.thumbnail || data.thumbnailUrl, // App.tsx 用的是 thumbnail
+            article_body: data.articleBody || data.article_body // 后台长文章正文字段
         });
         return { success: !error, error: error?.message };
     },
@@ -730,10 +730,10 @@ export const exerciseAPI = {
         const updateData: any = {};
         if (data.title !== undefined) updateData.title = data.title;
         if (data.description !== undefined) updateData.description = data.description;
-        if (data.type !== undefined) updateData.category = data.type;
-        if (data.videoUrl !== undefined) updateData.video_url = data.videoUrl;
-        if (data.thumbnailUrl !== undefined) updateData.thumbnail = data.thumbnailUrl;
-        if (data.articleBody !== undefined) updateData.article_body = data.articleBody;
+        if (data.type !== undefined || data.category !== undefined) updateData.category = data.category || data.type;
+        if (data.videoUrl !== undefined || data.video_url !== undefined) updateData.video_url = data.videoUrl || data.video_url;
+        if (data.thumbnailUrl !== undefined || data.thumbnail !== undefined) updateData.thumbnail = data.thumbnail || data.thumbnailUrl;
+        if (data.articleBody !== undefined || data.article_body !== undefined) updateData.article_body = data.articleBody || data.article_body;
 
         updateData.updated_at = new Date().toISOString();
 
