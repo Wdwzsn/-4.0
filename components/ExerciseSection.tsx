@@ -13,22 +13,23 @@ const VideoCard: React.FC<VideoCardProps> = ({ video, onStart }) => {
   const isArticle = !!video.articleBody;
 
   return (
-    <div className="bg-white dark:bg-slate-800 rounded-3xl overflow-hidden shadow-sm border border-slate-100 dark:border-slate-700 mb-6 transition-all hover:shadow-md">
-      <div className="relative aspect-video">
-        <img src={video.thumbnail} alt={video.title} className="w-full h-full object-cover" />
+    <div className="bg-white dark:bg-slate-800 rounded-3xl overflow-hidden shadow-sm border border-slate-100 dark:border-slate-700 mb-6 transition-all hover:shadow-xl hover:-translate-y-1 group">
+      <div className="relative aspect-video overflow-hidden">
+        <img src={video.thumbnail} alt={video.title} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
+        <div className="absolute inset-0 bg-black/5 group-hover:bg-black/0 transition-colors" />
       </div>
-      <div className="p-5">
+      <div className="p-4 md:p-6">
         <div className="flex justify-between items-start mb-2">
-          <span className="text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 px-3 py-1 rounded-full text-sm font-bold">
+          <span className="text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 px-3 py-1 rounded-full text-xs md:text-sm font-bold">
             {video.category}
           </span>
-          <span className="text-slate-400 text-sm">{video.views} 学习</span>
+          <span className="text-slate-400 text-xs md:text-sm">{video.views} 学习</span>
         </div>
-        <h3 className="text-xl font-black text-slate-800 dark:text-slate-100 mb-2">{video.title}</h3>
-        <p className="text-slate-500 dark:text-slate-400 text-sm line-clamp-2">{video.description}</p>
+        <h3 className="text-lg md:text-xl font-black text-slate-800 dark:text-slate-100 mb-2 line-clamp-1">{video.title}</h3>
+        <p className="text-slate-500 dark:text-slate-400 text-xs md:text-sm line-clamp-2 h-10">{video.description}</p>
         <button
           onClick={() => onStart(video)}
-          className="mt-4 w-full bg-emerald-600 text-white py-4 rounded-2xl font-black text-lg active:scale-95 transition-all shadow-lg shadow-emerald-200 dark:shadow-none"
+          className="mt-4 w-full bg-emerald-600 text-white py-3 md:py-4 rounded-xl md:rounded-2xl font-black text-base md:text-lg active:scale-95 transition-all shadow-lg shadow-emerald-200 dark:shadow-none"
         >
           {isArticle ? '阅读文章' : '进入训练'}
         </button>
@@ -418,7 +419,7 @@ export const ExerciseSection: React.FC = () => {
         ))}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 md:gap-8">
         {filteredVideos.map(video => (
           <VideoCard key={video.id} video={video} onStart={setActiveContent} />
         ))}

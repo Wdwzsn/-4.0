@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import API from '../services/apiService';
 
-type GameType = '2048' | 'TicTacToe' | 'Snake' | 'PianoTiles' | null;
+type GameType = '2048' | 'TicTacToe' | 'Snake' | 'PianoTiles' | 'Gomoku' | 'ChineseChess' | null;
 
 // ============ 排行榜组件 ============
 // ============ 排行榜组件 ============
@@ -95,6 +95,8 @@ export const EntertainmentSection: React.FC = () => {
                     <div className="p-6 grid grid-cols-2 gap-5">
                         <GameCard title="2048 益智" icon="🔢" color="from-orange-400 to-amber-500" desc="滑动合并，挑战极限" onClick={() => setActiveGame('2048')} />
                         <GameCard title="井字棋" icon="❌" color="from-blue-400 to-indigo-500" desc="智力对弈，老少皆宜" onClick={() => setActiveGame('TicTacToe')} />
+                        <GameCard title="古典五子棋" icon="☯️" color="from-slate-700 to-slate-900" desc="五子连珠，博弈智慧" onClick={() => setActiveGame('Gomoku')} />
+                        <GameCard title="中国象棋" icon="帥" color="from-red-600 to-red-800" desc="楚河汉界，排兵布阵" onClick={() => setActiveGame('ChineseChess')} />
                         <GameCard title="贪吃蛇" icon="🐍" color="from-emerald-400 to-teal-500" desc="越吃越长，步步惊心" onClick={() => setActiveGame('Snake')} />
                         <GameCard title="钢琴块" icon="🎹" color="from-purple-500 to-indigo-600" desc="点击琴块，抢分闯关" onClick={() => setActiveGame('PianoTiles')} />
 
@@ -109,6 +111,8 @@ export const EntertainmentSection: React.FC = () => {
                     <div className="p-4 flex flex-col items-center py-8">
                         {activeGame === '2048' && <Game2048 />}
                         {activeGame === 'TicTacToe' && <GameTicTacToe />}
+                        {activeGame === 'Gomoku' && <GameGomoku />}
+                        {activeGame === 'ChineseChess' && <GameChineseChess />}
                         {activeGame === 'Snake' && <GameSnake />}
                         {activeGame === 'PianoTiles' && <GamePianoTiles />}
                     </div>
@@ -121,6 +125,8 @@ export const EntertainmentSection: React.FC = () => {
 const gameNames: Record<string, string> = {
     '2048': '2048 益智方块',
     'TicTacToe': '井字棋',
+    'Gomoku': '古典五子棋',
+    'ChineseChess': '中国象棋',
     'Snake': '经典贪吃蛇',
     'PianoTiles': '钢琴块',
 };
@@ -768,6 +774,306 @@ const GamePianoTiles: React.FC = () => {
                 方块落到<strong className="text-indigo-400">蓝线以下</strong>时点击，错过扣❤️ · 进入下方才可点击！
             </p>
             <Leaderboard gameType="piano_tiles" show={showBoard} onClose={() => setShowBoard(false)} newScore={gs.gameOver ? lastScore : null} />
+        </div>
+    );
+};
+
+// =============================================
+// 游戏 5: 古典五子棋 - 含评分权重AI
+// =============================================
+const GOMOKU_SIZE = 12;
+
+const checkGomokuWinner = (board: (string | null)[][]): string | null => {
+    for (let r = 0; r < GOMOKU_SIZE; r++) {
+        for (let c = 0; c < GOMOKU_SIZE; c++) {
+            const player = board[r][c];
+            if (!player) continue;
+            // 检查右、下、右下、左下四个方向
+            const dirs = [[0, 1], [1, 0], [1, 1], [1, -1]];
+            for (const [dr, dc] of dirs) {
+                let count = 1;
+                for (let i = 1; i < 5; i++) {
+                    const nr = r + dr * i, nc = c + dc * i;
+                    if (nr >= 0 && nr < GOMOKU_SIZE && nc >= 0 && nc < GOMOKU_SIZE && board[nr][nc] === player) count++;
+                    else break;
+                }
+                if (count >= 5) return player;
+            }
+        }
+    }
+    return null;
+};
+
+// 简易权重评分 AI
+const gomokuAiMove = (board: (string | null)[][]): { r: number, c: number } => {
+    let bestScore = -1;
+    let moves: { r: number, c: number }[] = [];
+
+    const evaluate = (r: number, c: number, p: string) => {
+        let score = 0;
+        const dirs = [[0, 1], [1, 0], [1, 1], [1, -1]];
+        for (const [dr, dc] of dirs) {
+            let count = 0;
+            let block = 0;
+            // 正向
+            for (let i = 1; i < 5; i++) {
+                const nr = r + dr * i, nc = c + dc * i;
+                if (nr < 0 || nr >= GOMOKU_SIZE || nc < 0 || nc >= GOMOKU_SIZE) { block++; break; }
+                if (board[nr][nc] === p) count++;
+                else if (board[nr][nc] === null) break;
+                else { block++; break; }
+            }
+            // 反向
+            for (let i = 1; i < 5; i++) {
+                const nr = r - dr * i, nc = c - dc * i;
+                if (nr < 0 || nr >= GOMOKU_SIZE || nc < 0 || nc >= GOMOKU_SIZE) { block++; break; }
+                if (board[nr][nc] === p) count++;
+                else if (board[nr][nc] === null) break;
+                else { block++; break; }
+            }
+            if (count >= 4) score += 10000;
+            else if (count === 3) score += block === 0 ? 1000 : 100;
+            else if (count === 2) score += block === 0 ? 100 : 10;
+            else score += 1;
+        }
+        return score;
+    };
+
+    for (let r = 0; r < GOMOKU_SIZE; r++) {
+        for (let c = 0; c < GOMOKU_SIZE; c++) {
+            if (board[r][c]) continue;
+            const attack = evaluate(r, c, '⭕');
+            const defend = evaluate(r, c, '❌');
+            const score = attack + defend * 1.2;
+            if (score > bestScore) {
+                bestScore = score;
+                moves = [{ r, c }];
+            } else if (score === bestScore) {
+                moves.push({ r, c });
+            }
+        }
+    }
+    return moves[Math.floor(Math.random() * moves.length)];
+};
+
+const GameGomoku: React.FC = () => {
+    const [board, setBoard] = useState<(string | null)[][]>(Array(GOMOKU_SIZE).fill(null).map(() => Array(GOMOKU_SIZE).fill(null)));
+    const [isXNext, setIsXNext] = useState(true);
+    const [winner, setWinner] = useState<string | null>(null);
+    const [isThinking, setIsThinking] = useState(false);
+
+    const handleMove = (r: number, c: number) => {
+        if (board[r][c] || winner || !isXNext || isThinking) return;
+        const newBoard = board.map(row => [...row]);
+        newBoard[r][c] = '❌';
+        setBoard(newBoard);
+        
+        const w = checkGomokuWinner(newBoard);
+        if (w) { setWinner(w); return; }
+        
+        setIsXNext(false);
+        setIsThinking(true);
+        
+        setTimeout(() => {
+            const ai = gomokuAiMove(newBoard);
+            const nextBoard = newBoard.map(row => [...row]);
+            nextBoard[ai.r][ai.c] = '⭕';
+            setBoard(nextBoard);
+            const w2 = checkGomokuWinner(nextBoard);
+            if (w2) setWinner(w2);
+            setIsXNext(true);
+            setIsThinking(false);
+        }, 600);
+    };
+
+    const reset = () => {
+        setBoard(Array(GOMOKU_SIZE).fill(null).map(() => Array(GOMOKU_SIZE).fill(null)));
+        setIsXNext(true);
+        setWinner(null);
+        setIsThinking(false);
+    };
+
+    return (
+        <div className="flex flex-col items-center w-full max-w-sm">
+            <div className="mb-6 w-full flex justify-between items-center bg-white dark:bg-slate-800 p-4 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700">
+                <div>
+                    <p className="text-xs text-slate-400 font-black">状态</p>
+                    <p className={`text-lg font-black ${winner ? 'text-emerald-500 animate-bounce' : 'text-slate-700 dark:text-white'}`}>
+                        {winner ? (winner === '❌' ? '🎉 你赢了！' : '😢 电脑赢了！') : (isThinking ? '🧠 电脑思考中...' : '👤 轮到你了 (黑子)')}
+                    </p>
+                </div>
+                <button onClick={reset} className="bg-slate-100 dark:bg-slate-700 px-4 py-2 rounded-xl font-bold text-sm active:scale-95">重置棋局</button>
+            </div>
+
+            <div className="bg-[#DEB887] p-1.5 md:p-3 rounded-xl shadow-2xl relative border-4 border-[#8B4513]">
+                <div className="grid grid-cols-12 gap-0">
+                    {board.map((row, r) => row.map((val, c) => (
+                        <button
+                            key={`${r}-${c}`}
+                            onClick={() => handleMove(r, c)}
+                            className="w-7 h-7 md:w-8 md:h-8 flex items-center justify-center relative border border-[#c5a07c]/50"
+                        >
+                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                <div className="w-full h-px bg-[#8B4513]/30"></div>
+                                <div className="h-full w-px bg-[#8B4513]/30 absolute"></div>
+                            </div>
+                            {val && (
+                                <div className={`w-5 h-5 md:w-7 md:h-7 rounded-full shadow-lg z-10 transition-all duration-300 ${val === '❌' ? 'bg-zinc-900 scale-110' : 'bg-slate-50 border border-slate-200 scale-110'}`} />
+                            )}
+                        </button>
+                    )))}
+                </div>
+            </div>
+            <div className="mt-8 flex gap-8 items-center text-sm font-bold text-slate-400">
+                <div className="flex items-center gap-2"><div className="w-4 h-4 bg-zinc-900 rounded-full"></div> 你 (黑子)</div>
+                <div className="flex items-center gap-2"><div className="w-4 h-4 bg-slate-50 border border-slate-200 rounded-full"></div> 电脑 (白子)</div>
+            </div>
+        </div>
+    );
+};
+
+// =============================================
+// 游戏 6: 中国象棋 - 沉浸式对弈版
+// =============================================
+type PieceSide = 'RED' | 'BLACK';
+type PieceType = '将' | '士' | '象' | '马' | '车' | '炮' | '卒' | '帥' | '仕' | '相' | '傌' | '俥' | '炮' | '兵';
+
+interface Piece {
+  id: number;
+  type: PieceType;
+  side: PieceSide;
+  r: number;
+  c: number;
+}
+
+const INITIAL_PIECES: Piece[] = [
+  // 黑方 (上)
+  { id: 1, type: '车', side: 'BLACK', r: 0, c: 0 }, { id: 2, type: '马', side: 'BLACK', r: 0, c: 1 }, { id: 3, type: '象', side: 'BLACK', r: 0, c: 2 },
+  { id: 4, type: '士', side: 'BLACK', r: 0, c: 3 }, { id: 5, type: '将', side: 'BLACK', r: 0, c: 4 }, { id: 6, type: '士', side: 'BLACK', r: 0, c: 5 },
+  { id: 7, type: '象', side: 'BLACK', r: 0, c: 6 }, { id: 8, type: '马', side: 'BLACK', r: 0, c: 7 }, { id: 9, type: '车', side: 'BLACK', r: 0, c: 8 },
+  { id: 10, type: '炮', side: 'BLACK', r: 2, c: 1 }, { id: 11, type: '炮', side: 'BLACK', r: 2, c: 7 },
+  { id: 12, type: '卒', side: 'BLACK', r: 3, c: 0 }, { id: 13, type: '卒', side: 'BLACK', r: 3, c: 2 }, { id: 14, type: '卒', side: 'BLACK', r: 3, c: 4 },
+  { id: 15, type: '卒', side: 'BLACK', r: 3, c: 6 }, { id: 16, type: '卒', side: 'BLACK', r: 3, c: 8 },
+  // 红方 (下)
+  { id: 17, type: '俥', side: 'RED', r: 9, c: 0 }, { id: 18, type: '傌', side: 'RED', r: 9, c: 1 }, { id: 19, type: '相', side: 'RED', r: 9, c: 2 },
+  { id: 20, type: '仕', side: 'RED', r: 9, c: 3 }, { id: 21, type: '帥', side: 'RED', r: 9, c: 4 }, { id: 22, type: '仕', side: 'RED', r: 9, c: 5 },
+  { id: 23, type: '相', side: 'RED', r: 9, c: 6 }, { id: 24, type: '傌', side: 'RED', r: 9, c: 7 }, { id: 25, type: '俥', side: 'RED', r: 9, c: 8 },
+  { id: 26, type: '炮', side: 'RED', r: 7, c: 1 }, { id: 27, type: '炮', side: 'RED', r: 7, c: 7 },
+  { id: 28, type: '兵', side: 'RED', r: 6, c: 0 }, { id: 29, type: '兵', side: 'RED', r: 6, c: 2 }, { id: 30, type: '兵', side: 'RED', r: 6, c: 4 },
+  { id: 31, type: '兵', side: 'RED', r: 6, c: 6 }, { id: 32, type: '兵', side: 'RED', r: 6, c: 8 },
+];
+
+const GameChineseChess: React.FC = () => {
+    const [pieces, setPieces] = useState<Piece[]>(INITIAL_PIECES);
+    const [selectedId, setSelectedId] = useState<number | null>(null);
+    const [turn, setTurn] = useState<PieceSide>('RED');
+    const [hint, setHint] = useState('红方先行，请点击选择棋子');
+
+    const handleCellClick = (r: number, c: number) => {
+        const pieceAtCell = pieces.find(p => p.r === r && p.c === c);
+
+        if (selectedId === null) {
+            // 选择棋子
+            if (pieceAtCell && pieceAtCell.side === turn) {
+                setSelectedId(pieceAtCell.id);
+                setHint(`已选中 ${pieceAtCell.type}，请点击目标位置`);
+            }
+        } else {
+            // 已选中，尝试移动
+            const activePiece = pieces.find(p => p.id === selectedId)!;
+            
+            if (pieceAtCell && pieceAtCell.side === turn) {
+                // 切换选择
+                setSelectedId(pieceAtCell.id);
+                return;
+            }
+
+            // 执行移动 (这里简化了规则校验，允许基础落子，增加游戏的流畅体验)
+            // 如果目标位置有对方棋子，吃掉它
+            setPieces(prev => {
+                const filtered = prev.filter(p => p.r !== r || p.c !== c || p.id === selectedId);
+                return filtered.map(p => p.id === selectedId ? { ...p, r, c } : p);
+            });
+            
+            setSelectedId(null);
+            const nextTurn = turn === 'RED' ? 'BLACK' : 'RED';
+            setTurn(nextTurn);
+            setHint(`${nextTurn === 'RED' ? '红方' : '黑方'}回合，请思考走位`);
+
+            // 如果吃掉的是 将/帥，游戏结束
+            if (pieceAtCell && (pieceAtCell.type === '将' || pieceAtCell.type === '帥')) {
+                alert(`恭喜！${turn === 'RED' ? '红方' : '黑方'}赢得了比赛！`);
+                setPieces(INITIAL_PIECES);
+                setTurn('RED');
+                setHint('红方先行，请点击选择棋子');
+            }
+        }
+    };
+
+    const reset = () => {
+        setPieces(INITIAL_PIECES);
+        setSelectedId(null);
+        setTurn('RED');
+        setHint('红方先行，请点击选择棋子');
+    };
+
+    return (
+        <div className="flex flex-col items-center w-full max-w-sm select-none">
+            <div className="mb-6 w-full flex justify-between items-center bg-white dark:bg-slate-800 p-4 rounded-2xl shadow-md border-b-4 border-slate-200">
+                <div className="flex-1">
+                    <p className="text-xs text-slate-400 font-black">当前进程</p>
+                    <p className={`font-black ${turn === 'RED' ? 'text-red-600' : 'text-slate-800 dark:text-slate-200'}`}>
+                        {hint}
+                    </p>
+                </div>
+                <button onClick={reset} className="bg-slate-100 dark:bg-slate-700 px-4 py-2 rounded-xl text-xs font-black">重新摆盘</button>
+            </div>
+
+            <div className="relative bg-[#f4d0a0] p-2 md:p-4 rounded-lg shadow-2xl border-2 border-[#8b4513]">
+                {/* 棋盘背景网格 */}
+                <div className="grid grid-cols-8 grid-rows-9 border border-[#8b4513] bg-[#f4d0a0]">
+                    {Array(9 * 10).fill(0).map((_, i) => {
+                        const r = Math.floor(i / 9);
+                        const c = i % 9;
+                        const piece = pieces.find(p => p.r === r && p.c === c);
+                        const isSelected = selectedId === piece?.id;
+
+                        return (
+                            <div 
+                                key={i} 
+                                onClick={() => handleCellClick(r, c)}
+                                className={`w-8 h-8 md:w-10 md:h-10 border-[0.5px] border-[#8b4513]/20 flex items-center justify-center relative cursor-pointer`}
+                            >
+                                {/* 楚河汉界 */}
+                                {r === 4 && c === 4 && (
+                                    <div className="absolute inset-0 flex items-center justify-center whitespace-nowrap pointer-events-none text-[#8b4513]/40 font-black text-xs md:text-sm">
+                                        楚 河  漢 界
+                                    </div>
+                                )}
+                                
+                                {piece && (
+                                    <div className={`
+                                        w-7 h-7 md:w-9 md:h-9 rounded-full border-2 flex items-center justify-center font-black text-sm md:text-lg z-10 transition-transform active:scale-90 shadow-md
+                                        ${piece.side === 'RED' ? 'bg-[#f8e8c8] border-red-700 text-red-700' : 'bg-[#f8e8c8] border-zinc-800 text-zinc-800'}
+                                        ${isSelected ? 'scale-110 !border-blue-500 shadow-blue-500/50 shadow-lg ring-2 ring-blue-500 ring-offset-2' : ''}
+                                    `}>
+                                        {piece.type}
+                                    </div>
+                                )}
+                                
+                                {/* 备选路径点提示 (如果是当前选中的合法展示，这里暂简化) */}
+                                {isSelected && <div className="absolute w-2 h-2 bg-blue-400/50 rounded-full animate-ping"></div>}
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+
+            <div className="mt-8 flex gap-6 text-xs md:text-sm font-bold text-slate-500 bg-white/50 dark:bg-slate-800/50 px-6 py-3 rounded-2xl">
+                <div className="flex items-center gap-2">🔴 红方</div>
+                <div className="flex items-center gap-2">⚫ 黑方</div>
+                <div className="flex items-center gap-2">⚠️ 模拟对弈版</div>
+            </div>
         </div>
     );
 };

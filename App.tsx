@@ -54,6 +54,7 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
   const [annTitle, setAnnTitle] = useState('');
   const [annContent, setAnnContent] = useState('');
   const [isPublishing, setIsPublishing] = useState(false);
+  const [editingAnn, setEditingAnn] = useState<any>(null); // 新增：正在编辑的公告
 
   // 新增：对话相关状态
   const [chatUser, setChatUser] = useState<UserAccount | null>(null);
@@ -299,7 +300,24 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
         setAnnouncements(announcements.filter(a => a.id !== id));
       }
     } catch (e) {
-      alert('删除失败');
+      alert('操作失败');
+    }
+  };
+
+  const handleUpdateAnn = async () => {
+    if (!editingAnn.title || !editingAnn.content) return alert('标题和内容不能为空');
+    setIsPublishing(true);
+    try {
+      const res: any = await (API as any).admin.announcements.update(editingAnn.id, editingAnn.title, editingAnn.content);
+      if (res.success) {
+        alert('修改成功');
+        setAnnouncements(announcements.map(a => a.id === editingAnn.id ? res.data : a));
+        setEditingAnn(null);
+      }
+    } catch (e: any) {
+      alert('更新失败: ' + e.message);
+    } finally {
+      setIsPublishing(false);
     }
   };
 
@@ -800,41 +818,76 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
           {activeTab === 'announcements' && (
             <div className="bg-slate-800 rounded-[45px] border border-slate-700 shadow-2xl overflow-hidden p-8">
               <h2 className="text-2xl font-black mb-8">系统公告发布中心</h2>
+              
+              {/* 编辑/发布区域 */}
               <div className="bg-slate-900/50 p-8 rounded-[35px] border border-slate-700 mb-10">
-                <p className="text-slate-400 mb-6 font-bold">新建一条全站公告，发布后用户将在右上角小铃铛看到提示。</p>
+                <p className="text-slate-400 mb-6 font-bold">
+                  {editingAnn ? '📝 正在编辑公告' : '新建一条全站公告，发布后用户将在右上角小铃铛看到提示。'}
+                </p>
                 <div className="space-y-4">
                   <input
-                    value={annTitle}
-                    onChange={e => setAnnTitle(e.target.value)}
+                    value={editingAnn ? editingAnn.title : annTitle}
+                    onChange={e => editingAnn ? setEditingAnn({ ...editingAnn, title: e.target.value }) : setAnnTitle(e.target.value)}
                     className="w-full bg-slate-800 border border-slate-700 rounded-2xl p-4 text-white font-bold outline-none focus:ring-2 focus:ring-emerald-500"
                     placeholder="公告标题..."
                   />
                   <textarea
-                    value={annContent}
-                    onChange={e => setAnnContent(e.target.value)}
+                    value={editingAnn ? editingAnn.content : annContent}
+                    onChange={e => editingAnn ? setEditingAnn({ ...editingAnn, content: e.target.value }) : setAnnContent(e.target.value)}
                     className="w-full bg-slate-800 border border-slate-700 rounded-2xl p-4 text-white h-32 outline-none focus:ring-2 focus:ring-emerald-500"
                     placeholder="公告详细内容..."
                   />
-                  <button
-                    onClick={handlePublishAnn}
-                    disabled={isPublishing}
-                    className="bg-emerald-600 text-white px-10 py-4 rounded-2xl font-black text-xl shadow-lg hover:bg-emerald-500 transition-all active:scale-95 disabled:opacity-50"
-                  >
-                    {isPublishing ? '发布中...' : '立即面向全站发布'}
-                  </button>
+                  <div className="flex gap-4">
+                    {editingAnn ? (
+                      <>
+                        <button
+                          onClick={handleUpdateAnn}
+                          disabled={isPublishing}
+                          className="flex-1 bg-emerald-600 text-white px-10 py-4 rounded-2xl font-black text-xl shadow-lg hover:bg-emerald-500 transition-all active:scale-95 disabled:opacity-50"
+                        >
+                          {isPublishing ? '保存中...' : '保存修改'}
+                        </button>
+                        <button
+                          onClick={() => setEditingAnn(null)}
+                          className="bg-slate-700 text-white px-10 py-4 rounded-2xl font-black text-xl shadow-lg hover:bg-slate-600 transition-all active:scale-95"
+                        >
+                          取消
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        onClick={handlePublishAnn}
+                        disabled={isPublishing}
+                        className="bg-emerald-600 text-white px-10 py-4 rounded-2xl font-black text-xl shadow-lg hover:bg-emerald-500 transition-all active:scale-95 disabled:opacity-50"
+                      >
+                        {isPublishing ? '发布中...' : '立即面向全站发布'}
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
 
               <h3 className="text-xl font-black mb-6">已发布公告历史</h3>
               <div className="space-y-4">
                 {announcements.map(ann => (
-                  <div key={ann.id} className="bg-slate-900/30 p-6 rounded-3xl border border-slate-700 flex justify-between items-center">
+                  <div key={ann.id} className="bg-slate-900/30 p-6 rounded-3xl border border-slate-700 flex justify-between items-center group">
                     <div>
                       <h4 className="font-black text-lg text-emerald-400">{ann.title}</h4>
                       <p className="text-slate-400 text-sm mt-1">{ann.content.substring(0, 50)}...</p>
                       <p className="text-slate-500 text-xs mt-2">{new Date(ann.created_at).toLocaleString()}</p>
                     </div>
-                    <button onClick={() => handleDeleteAnn(ann.id)} className="text-red-500 hover:text-red-400 font-bold">撤回公告</button>
+                    <div className="flex gap-4">
+                      <button 
+                        onClick={() => {
+                          setEditingAnn(ann);
+                          window.scrollTo({ top: 0, behavior: 'smooth' });
+                        }} 
+                        className="text-blue-400 hover:text-blue-300 font-bold"
+                      >
+                        编辑
+                      </button>
+                      <button onClick={() => handleDeleteAnn(ann.id)} className="text-red-500 hover:text-red-400 font-bold">撤回</button>
+                    </div>
                   </div>
                 ))}
               </div>

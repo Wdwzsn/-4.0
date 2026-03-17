@@ -635,9 +635,13 @@ export const adminAPI = {
     announcements: {
         // 发布公告
         publish: async (title: string, content: string) => {
-
-            const { error } = await getAdminSupabase().from('announcements').insert({ title, content });
-            return { success: !error };
+            const { data, error } = await getAdminSupabase().from('announcements').insert({ title, content }).select().single();
+            return { success: !error, data: data };
+        },
+        // 更新公告
+        update: async (id: string, title: string, content: string) => {
+            const { data, error } = await getAdminSupabase().from('announcements').update({ title, content }).eq('id', id).select().single();
+            return { success: !error, data: data };
         },
         // 删除公告
         delete: async (id: string) => {
