@@ -38,8 +38,13 @@ const VideoCard: React.FC<VideoCardProps> = ({ video, onStart }) => {
 };
 
 const ArticleOverlay: React.FC<{ video: VideoContent; onClose: () => void }> = ({ video, onClose }) => {
-  const [likes, setLikes] = useState(video.likes || 0);
-  const [isLiked, setIsLiked] = useState(false);
+  // 从 localStorage 读取持久化的点赞数和点赞状态，否则回退到 video.likes
+  const [likes, setLikes] = useState(() =>
+    Number(localStorage.getItem(`ex_likes_${video.id}`)) || video.likes || 0
+  );
+  const [isLiked, setIsLiked] = useState(() =>
+    localStorage.getItem(`ex_liked_${video.id}`) === 'true'
+  );
 
   const handleLike = async () => {
     if (isLiked) return;
@@ -53,6 +58,7 @@ const ArticleOverlay: React.FC<{ video: VideoContent; onClose: () => void }> = (
       console.error('点赞失败', e);
     }
   };
+
 
   return (
     <div className="fixed inset-0 z-[150] bg-white dark:bg-slate-900 flex flex-col items-center p-0 overflow-hidden">
