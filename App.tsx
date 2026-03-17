@@ -167,17 +167,44 @@ const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
 
     fetchUsers();
     fetchExercises();
+
+    // 每 30 秒刷新一次用户列表，保持在线状态实时准确
+    const pollInterval = setInterval(() => {
+      API.admin.getAllUsers()
+        .then((response: any) => {
+          if (response.success && response.data) {
+            setUsers(response.data.map((u: any): UserAccount => ({
+              id: u.id, phone: u.phone, name: u.name,
+              avatar: u.avatar || `https://picsum.photos/seed/${u.name}/400/400`,
+              motto: u.motto || '健康生活，长青不老',
+              bio: u.bio || '暂无介绍', age: u.age || '未知',
+              gender: u.gender || '未设置', province: u.province || '未设置',
+              interests: u.interests || [], birthday: u.birthday || '未设置',
+              routine: u.routine || '每日功法练习',
+              joinedDate: u.joined_date || new Date().getFullYear().toString(),
+              streak: u.streak || 1,
+              lastActive: u.last_active ? new Date(u.last_active).getTime() : 0,
+              isRealUser: u.is_real_user !== false, password: ''
+            })));
+          }
+        })
+        .catch(() => {/* 静默失败 */});
+    }, 30000);
+
+    return () => clearInterval(pollInterval);
   }, []);
+
 
   const onlineCount = useMemo(() => {
     const now = Date.now();
-    return users.filter(u => u.last_active && (now - new Date(u.last_active).getTime()) < 180000).length;
+    return users.filter(u => u.lastActive && (now - u.lastActive) < 180000).length;
   }, [users]);
 
-  const checkOnline = (u: any) => {
-    if (!u.last_active) return false;
-    return (Date.now() - new Date(u.last_active).getTime()) < 180000;
+  const checkOnline = (u: UserAccount) => {
+    if (!u.lastActive) return false;
+    return (Date.now() - u.lastActive) < 180000;
   };
+
 
   const handleSaveExercise = async (e: React.FormEvent) => {
     e.preventDefault();

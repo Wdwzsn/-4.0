@@ -13,23 +13,22 @@ const VideoCard: React.FC<VideoCardProps> = ({ video, onStart }) => {
   const isArticle = !!video.articleBody;
 
   return (
-    <div className="bg-white dark:bg-slate-800 rounded-3xl overflow-hidden shadow-sm border border-slate-100 dark:border-slate-700 mb-6 transition-all hover:shadow-xl hover:-translate-y-1 group">
-      <div className="relative aspect-video overflow-hidden">
-        <img src={video.thumbnail} alt={video.title} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
-        <div className="absolute inset-0 bg-black/5 group-hover:bg-black/0 transition-colors" />
+    <div className="bg-white dark:bg-slate-800 rounded-2xl md:rounded-3xl overflow-hidden shadow-sm border border-slate-100 dark:border-slate-700 transition-all hover:shadow-xl hover:-translate-y-1 group">
+      <div className="relative aspect-[16/9] overflow-hidden">
+        <img src={video.thumbnail} alt={video.title} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
       </div>
-      <div className="p-4 md:p-6">
-        <div className="flex justify-between items-start mb-2">
-          <span className="text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 px-3 py-1 rounded-full text-xs md:text-sm font-bold">
+      <div className="p-3 md:p-5">
+        <div className="flex justify-between items-center mb-1.5">
+          <span className="text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 px-2.5 py-0.5 rounded-full text-xs font-bold">
             {video.category}
           </span>
-          <span className="text-slate-400 text-xs md:text-sm">{video.views} 学习</span>
+          <span className="text-slate-400 text-xs">{video.views} 学习</span>
         </div>
-        <h3 className="text-lg md:text-xl font-black text-slate-800 dark:text-slate-100 mb-2 line-clamp-1">{video.title}</h3>
-        <p className="text-slate-500 dark:text-slate-400 text-xs md:text-sm line-clamp-2 h-10">{video.description}</p>
+        <h3 className="text-sm md:text-lg font-black text-slate-800 dark:text-slate-100 mb-1 line-clamp-1">{video.title}</h3>
+        <p className="text-slate-500 dark:text-slate-400 text-xs line-clamp-2 leading-relaxed">{video.description}</p>
         <button
           onClick={() => onStart(video)}
-          className="mt-4 w-full bg-emerald-600 text-white py-3 md:py-4 rounded-xl md:rounded-2xl font-black text-base md:text-lg active:scale-95 transition-all shadow-lg shadow-emerald-200 dark:shadow-none"
+          className="mt-3 w-full bg-emerald-600 text-white py-2.5 md:py-3.5 rounded-xl font-black text-sm md:text-base active:scale-95 transition-all shadow-md shadow-emerald-200/60 dark:shadow-none"
         >
           {isArticle ? '阅读文章' : '进入训练'}
         </button>
@@ -399,32 +398,36 @@ export const ExerciseSection: React.FC = () => {
     <div className="pb-24">
       {renderOverlay()}
 
-      <div className="mb-8 md:mb-10">
-        <h2 className="text-3xl md:text-4xl font-black text-slate-800 dark:text-white tracking-tight">每日功法训练</h2>
-        <p className="text-slate-500 dark:text-slate-400 text-lg md:text-xl mt-2 font-medium">分节指导 · 动作精修</p>
+      {/* 页面标题 */}
+      <div className="mb-4 md:mb-8">
+        <h2 className="text-2xl md:text-4xl font-black text-slate-800 dark:text-white tracking-tight">每日功法训练</h2>
+        <p className="text-slate-500 dark:text-slate-400 text-sm md:text-xl mt-1 font-medium">分节指导 · 动作精修</p>
       </div>
 
-      <div className="flex space-x-3 md:space-x-4 mb-8 md:mb-10 overflow-x-auto pb-4 scrollbar-hide">
+      {/* 分类筛选 */}
+      <div className="flex space-x-2 md:space-x-4 mb-5 md:mb-10 overflow-x-auto pb-3 scrollbar-hide">
         {['全部', '太极拳', '八段锦', '养生功', '传统文化'].map(cat => (
           <button
             key={cat}
             onClick={() => setFilter(cat)}
-            className={`whitespace-nowrap px-6 md:px-8 py-3 md:py-4 rounded-2xl text-lg md:text-xl font-black transition-all ${filter === cat
-              ? 'bg-emerald-600 text-white shadow-xl scale-105'
-              : 'bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-100 dark:border-slate-700'
-              }`}
+            className={`whitespace-nowrap px-4 md:px-8 py-2 md:py-4 rounded-2xl text-sm md:text-xl font-black transition-all ${
+              filter === cat
+                ? 'bg-emerald-600 text-white shadow-md'
+                : 'bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700'
+            }`}
           >
             {cat}
           </button>
         ))}
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 md:gap-8">
+      {/* 功法卡片网格 */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-6">
         {filteredVideos.map(video => (
           <VideoCard key={video.id} video={video} onStart={setActiveContent} />
         ))}
         {filteredVideos.length === 0 && (
-          <div className="col-span-full py-20 text-center text-slate-500 font-black text-xl bg-white dark:bg-slate-800 rounded-3xl border border-dashed border-slate-200 dark:border-slate-700">
+          <div className="col-span-full py-20 text-center text-slate-500 font-black text-lg bg-white dark:bg-slate-800 rounded-3xl border border-dashed border-slate-200 dark:border-slate-700">
             这个分类下暂时没有收到功法哦
           </div>
         )}

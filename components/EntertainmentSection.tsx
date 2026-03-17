@@ -428,12 +428,16 @@ const randFood = (snake: Pos[]): Pos => {
 
 const GameSnake: React.FC = () => {
     const initState = () => ({
-        snake: [{ x: 9, y: 9 }, { x: 8, y: 9 }],
+        snake: [{ x: 9, y: 9 }, { x: 8, y: 9 }, { x: 7, y: 9 }],
         food: { x: 4, y: 4 },
+        goldenFood: null as Pos | null,
+        goldenTimer: 0,
         dir: { x: 1, y: 0 },
+        nextDir: { x: 1, y: 0 },
         gameOver: false,
         score: 0,
         started: false,
+        level: 1,
     });
 
     const [state, setState] = useState(initState);
@@ -443,41 +447,70 @@ const GameSnake: React.FC = () => {
     const [showBoard, setShowBoard] = useState(false);
     const [lastScore, setLastScore] = useState<number | null>(null);
 
+    const getSpeed = (score: number) => {
+        // 150ms start, min 70ms
+        return Math.max(70, 150 - Math.floor(score / 5) * 10);
+    };
+
     const tick = useCallback(() => {
-        const { snake, food, dir, gameOver } = stateRef.current;
+        const { snake, food, goldenFood, goldenTimer, nextDir, gameOver, score } = stateRef.current;
         if (gameOver) return;
 
-        const head = { x: snake[0].x + dir.x, y: snake[0].y + dir.y };
-        if (head.x < 0 || head.x >= GRID || head.y < 0 || head.y >= GRID || snake.some(s => s.x === head.x && s.y === head.y)) {
-            setState(s => {
-                setLastScore(s.score);
-                return { ...s, gameOver: true };
-            });
+        const head = { x: snake[0].x + nextDir.x, y: snake[0].y + nextDir.y };
+        if (head.x < 0 || head.x >= GRID || head.y < 0 || head.y >= GRID ||
+            snake.some(s => s.x === head.x && s.y === head.y)) {
+            setState(s => { setLastScore(s.score); return { ...s, gameOver: true }; });
             return;
         }
 
-        const ateFood = head.x === food.x && head.y === food.y;
+        const ateNormal = head.x === food.x && head.y === food.y;
+        const ateGolden = goldenFood && head.x === goldenFood.x && head.y === goldenFood.y;
         const newSnake = [head, ...snake];
-        if (!ateFood) newSnake.pop();
+        if (!ateNormal && !ateGolden) newSnake.pop();
+        if (ateGolden && !ateNormal) newSnake.pop(); // golden gives +3 score but doesn't extend snake more
+
+        const newScore = score + (ateNormal ? 10 : 0) + (ateGolden ? 30 : 0);
+        const newGoldenTimer = ateGolden ? 0 : Math.max(0, goldenTimer - 1);
+
+        // Randomly spawn golden food every ~20 ticks
+        let newGoldenFood = ateGolden ? null : goldenFood;
+        if (!newGoldenFood && Math.random() < 0.03) {
+            newGoldenFood = randFood([...newSnake, food]);
+            // auto-expire: handled via timer countdown
+        }
+        if (newGoldenTimer === 0 && !ateGolden) newGoldenFood = null;
+
+        // Reroll golden timer on spawn
+        const finalGoldenTimer = newGoldenFood && !goldenFood ? 150 : newGoldenTimer;
 
         setState(s => ({
             ...s,
             snake: newSnake,
-            food: ateFood ? randFood(newSnake) : food,
-            score: ateFood ? s.score + 10 : s.score,
+            food: ateNormal ? randFood(newSnake) : food,
+            goldenFood: finalGoldenTimer > 0 ? newGoldenFood : null,
+            goldenTimer: finalGoldenTimer,
+            score: newScore,
+            level: Math.floor(newScore / 50) + 1,
+            dir: nextDir,
         }));
     }, []);
 
     const start = () => {
-        const s = initState();
-        s.started = true;
-        setState(s);
         if (timerRef.current) clearInterval(timerRef.current);
-        timerRef.current = setInterval(tick, 200);
+        const s = { ...initState(), started: true };
+        setState(s);
+        timerRef.current = setInterval(tick, getSpeed(0));
     };
 
-    useEffect(() => () => { if (timerRef.current) clearInterval(timerRef.current); }, []);
+    // Adjust speed when score changes
+    useEffect(() => {
+        if (state.started && !state.gameOver) {
+            if (timerRef.current) clearInterval(timerRef.current);
+            timerRef.current = setInterval(tick, getSpeed(state.score));
+        }
+    }, [Math.floor(state.score / 5)]);
 
+    useEffect(() => () => { if (timerRef.current) clearInterval(timerRef.current); }, []);
     useEffect(() => {
         if (state.gameOver && timerRef.current) clearInterval(timerRef.current);
     }, [state.gameOver]);
@@ -485,71 +518,124 @@ const GameSnake: React.FC = () => {
     const setDir = (d: Pos) => {
         setState(s => {
             if (s.dir.x === -d.x && s.dir.y === -d.y) return s;
-            return { ...s, dir: d, started: true };
+            return { ...s, nextDir: d, started: true };
         });
     };
+
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => {
+            const map: Record<string, Pos> = {
+                ArrowUp: { x: 0, y: -1 }, ArrowDown: { x: 0, y: 1 },
+                ArrowLeft: { x: -1, y: 0 }, ArrowRight: { x: 1, y: 0 },
+                w: { x: 0, y: -1 }, s: { x: 0, y: 1 }, a: { x: -1, y: 0 }, d: { x: 1, y: 0 },
+            };
+            if (map[e.key]) { e.preventDefault(); setDir(map[e.key]); }
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, []);
 
     const cellSize = Math.floor(288 / GRID);
 
     return (
         <div className="flex flex-col items-center w-full max-w-xs select-none">
-            <div className="flex justify-between w-full mb-4 gap-3">
-                <div className="bg-slate-800 text-white px-5 py-3 rounded-2xl font-black text-xl flex-1 text-center">
-                    得分: {state.score}
+            {/* 头部信息 */}
+            <div className="flex justify-between w-full mb-3 gap-2">
+                <div className="bg-gradient-to-br from-emerald-600 to-teal-700 text-white px-4 py-2.5 rounded-2xl font-black text-lg flex-1 text-center shadow-lg shadow-emerald-500/20">
+                    <span className="text-xs font-bold opacity-70 block">得分</span>
+                    {state.score}
                 </div>
-                <button onClick={start} className="bg-emerald-500 text-white px-5 py-3 rounded-2xl font-black">
+                <div className="bg-gradient-to-br from-purple-600 to-indigo-700 text-white px-4 py-2.5 rounded-2xl font-black text-lg text-center shadow-lg shadow-purple-500/20">
+                    <span className="text-xs font-bold opacity-70 block">Lv</span>
+                    {state.level}
+                </div>
+                <button onClick={start} className="bg-slate-800 dark:bg-slate-600 text-white px-4 py-2.5 rounded-2xl font-black text-sm active:scale-95">
                     {state.started ? '重开' : '开始'}
                 </button>
             </div>
 
+            {/* 状态提示 */}
             {state.gameOver && (
-                <div className="w-full bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-300 text-center py-3 rounded-2xl font-black mb-4 text-lg">
-                    😢 游戏结束！得分: {state.score}
-                    <div className="mt-2 flex justify-center gap-4 text-sm">
+                <div className="w-full bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-300 text-center py-3 rounded-2xl font-black mb-3 text-lg">
+                    😢 得分: {state.score}
+                    <div className="mt-1.5 flex justify-center gap-4 text-sm">
                         <button onClick={start} className="underline">再来</button>
-                        <button onClick={() => setShowBoard(true)} className="underline font-bold text-emerald-600 dark:text-emerald-400">查看排行榜</button>
+                        <button onClick={() => setShowBoard(true)} className="underline font-bold text-emerald-600 dark:text-emerald-400">排行榜</button>
                     </div>
                 </div>
             )}
-
             {!state.started && !state.gameOver && (
-                <div className="w-full bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 text-center py-3 rounded-2xl font-black mb-4 flex justify-between px-6">
-                    <span>点击【开始】或方向键开始</span>
+                <div className="w-full bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 text-center py-2.5 rounded-2xl font-black mb-3 text-sm flex justify-between px-5">
+                    <span>⬆⬇⬅➡ 方向键/WASD控制</span>
                     <button onClick={() => { setLastScore(null); setShowBoard(true); }} className="underline ml-2">排行榜</button>
                 </div>
             )}
 
+            {/* 棋盘 */}
             <div
-                className="relative bg-slate-100 dark:bg-slate-700 rounded-2xl overflow-hidden border-4 border-slate-300 dark:border-slate-600 shadow-xl"
-                style={{ width: GRID * cellSize, height: GRID * cellSize }}
+                className="relative rounded-2xl overflow-hidden border-4 border-slate-700 shadow-2xl"
+                style={{ width: GRID * cellSize, height: GRID * cellSize, background: '#0f1729' }}
             >
-                {/* 蛇 */}
-                {state.snake.map((s, i) => (
-                    <div
-                        key={i}
-                        className={`absolute rounded-sm transition-all ${i === 0 ? 'bg-emerald-600' : 'bg-emerald-400'}`}
-                        style={{ left: s.x * cellSize + 1, top: s.y * cellSize + 1, width: cellSize - 2, height: cellSize - 2 }}
-                    />
-                ))}
-                {/* 食物 */}
+                {/* 背景格子 */}
+                {Array.from({ length: GRID }, (_, y) =>
+                    Array.from({ length: GRID }, (_, x) => (
+                        <div key={`${x}-${y}`} className="absolute"
+                            style={{ left: x * cellSize, top: y * cellSize, width: cellSize, height: cellSize,
+                                background: (x + y) % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent' }} />
+                    ))
+                )}
+
+                {/* 蛇身 */}
+                {state.snake.map((s, i) => {
+                    const ratio = i / state.snake.length;
+                    const r = Math.round(34 + (14 - 34) * ratio);
+                    const g = Math.round(197 + (165 - 197) * ratio);
+                    const b = Math.round(94 + (233 - 94) * ratio);
+                    return (
+                        <div
+                            key={i}
+                            className={`absolute ${i === 0 ? 'z-20' : 'z-10'} transition-none`}
+                            style={{
+                                left: s.x * cellSize + 1,
+                                top: s.y * cellSize + 1,
+                                width: cellSize - 2,
+                                height: cellSize - 2,
+                                borderRadius: i === 0 ? '45%' : '30%',
+                                background: `rgb(${r},${g},${b})`,
+                                boxShadow: i === 0 ? '0 0 8px rgba(52,211,153,0.6)' : undefined,
+                            }}
+                        />
+                    );
+                })}
+
+                {/* 普通食物 🍎 */}
                 <div
-                    className="absolute bg-red-500 rounded-full animate-pulse"
-                    style={{ left: state.food.x * cellSize + 2, top: state.food.y * cellSize + 2, width: cellSize - 4, height: cellSize - 4 }}
-                />
+                    className="absolute flex items-center justify-center z-20 animate-bounce"
+                    style={{ left: state.food.x * cellSize, top: state.food.y * cellSize, width: cellSize, height: cellSize, fontSize: cellSize * 0.8 }}
+                >🍎</div>
+
+                {/* 金色食物 ⭐ */}
+                {state.goldenFood && (
+                    <div
+                        className="absolute flex items-center justify-center z-30 animate-pulse"
+                        style={{ left: state.goldenFood.x * cellSize, top: state.goldenFood.y * cellSize, width: cellSize, height: cellSize, fontSize: cellSize * 0.85, filter: 'drop-shadow(0 0 6px gold)' }}
+                    >⭐</div>
+                )}
             </div>
 
-            <div className="mt-6 grid grid-cols-3 gap-3 w-48">
-                <div />
-                <button onClick={() => setDir({ x: 0, y: -1 })} className="w-14 h-14 bg-white dark:bg-slate-700 dark:text-white rounded-2xl text-2xl active:scale-90 shadow-md border border-slate-200 dark:border-slate-600">⬆</button>
-                <div />
-                <button onClick={() => setDir({ x: -1, y: 0 })} className="w-14 h-14 bg-white dark:bg-slate-700 dark:text-white rounded-2xl text-2xl active:scale-90 shadow-md border border-slate-200 dark:border-slate-600">⬅</button>
-                <button onClick={() => setDir({ x: 0, y: 1 })} className="w-14 h-14 bg-white dark:bg-slate-700 dark:text-white rounded-2xl text-2xl active:scale-90 shadow-md border border-slate-200 dark:border-slate-600">⬇</button>
-                <button onClick={() => setDir({ x: 1, y: 0 })} className="w-14 h-14 bg-white dark:bg-slate-700 dark:text-white rounded-2xl text-2xl active:scale-90 shadow-md border border-slate-200 dark:border-slate-600">➡</button>
+            {/* 方向键 */}
+            <div className="mt-4 grid grid-cols-3 gap-2 w-44">
+                <div /><button onClick={() => setDir({ x: 0, y: -1 })} className="w-13 h-13 bg-slate-800 text-white rounded-xl text-xl active:scale-90 shadow-md flex items-center justify-center p-3">⬆</button><div />
+                <button onClick={() => setDir({ x: -1, y: 0 })} className="w-13 h-13 bg-slate-800 text-white rounded-xl text-xl active:scale-90 shadow-md flex items-center justify-center p-3">⬅</button>
+                <button onClick={() => setDir({ x: 0, y: 1 })} className="w-13 h-13 bg-slate-800 text-white rounded-xl text-xl active:scale-90 shadow-md flex items-center justify-center p-3">⬇</button>
+                <button onClick={() => setDir({ x: 1, y: 0 })} className="w-13 h-13 bg-slate-800 text-white rounded-xl text-xl active:scale-90 shadow-md flex items-center justify-center p-3">➡</button>
             </div>
+            <p className="mt-2 text-slate-400 text-xs font-bold text-center">🍎 +10分  ⭐ +30分（限时出现）<br/>分数越高速度越快</p>
             <Leaderboard gameType="snake" show={showBoard} onClose={() => setShowBoard(false)} newScore={state.gameOver ? lastScore : null} />
         </div>
     );
 };
+
 
 // =============================================
 // 游戏 4: 钢琴块 - 完全重写，基于 setInterval
@@ -933,148 +1019,451 @@ const GameGomoku: React.FC = () => {
 };
 
 // =============================================
-// 游戏 6: 中国象棋 - 沉浸式对弈版
+// 游戏 6: 中国象棋 - 完整规则版
 // =============================================
-type PieceSide = 'RED' | 'BLACK';
-type PieceType = '将' | '士' | '象' | '马' | '车' | '炮' | '卒' | '帥' | '仕' | '相' | '傌' | '俥' | '炮' | '兵';
+type ChessSide = 'RED' | 'BLACK';
+type ChessPieceType = 'ju' | 'ma' | 'xiang' | 'shi' | 'jiang' | 'pao' | 'zu'; // 车马象士将炮卒
 
-interface Piece {
+interface ChessPiece {
   id: number;
-  type: PieceType;
-  side: PieceSide;
-  r: number;
-  c: number;
+  type: ChessPieceType;
+  side: ChessSide;
+  r: number; // 0-9行
+  c: number; // 0-8列
 }
 
-const INITIAL_PIECES: Piece[] = [
-  // 黑方 (上)
-  { id: 1, type: '车', side: 'BLACK', r: 0, c: 0 }, { id: 2, type: '马', side: 'BLACK', r: 0, c: 1 }, { id: 3, type: '象', side: 'BLACK', r: 0, c: 2 },
-  { id: 4, type: '士', side: 'BLACK', r: 0, c: 3 }, { id: 5, type: '将', side: 'BLACK', r: 0, c: 4 }, { id: 6, type: '士', side: 'BLACK', r: 0, c: 5 },
-  { id: 7, type: '象', side: 'BLACK', r: 0, c: 6 }, { id: 8, type: '马', side: 'BLACK', r: 0, c: 7 }, { id: 9, type: '车', side: 'BLACK', r: 0, c: 8 },
-  { id: 10, type: '炮', side: 'BLACK', r: 2, c: 1 }, { id: 11, type: '炮', side: 'BLACK', r: 2, c: 7 },
-  { id: 12, type: '卒', side: 'BLACK', r: 3, c: 0 }, { id: 13, type: '卒', side: 'BLACK', r: 3, c: 2 }, { id: 14, type: '卒', side: 'BLACK', r: 3, c: 4 },
-  { id: 15, type: '卒', side: 'BLACK', r: 3, c: 6 }, { id: 16, type: '卒', side: 'BLACK', r: 3, c: 8 },
-  // 红方 (下)
-  { id: 17, type: '俥', side: 'RED', r: 9, c: 0 }, { id: 18, type: '傌', side: 'RED', r: 9, c: 1 }, { id: 19, type: '相', side: 'RED', r: 9, c: 2 },
-  { id: 20, type: '仕', side: 'RED', r: 9, c: 3 }, { id: 21, type: '帥', side: 'RED', r: 9, c: 4 }, { id: 22, type: '仕', side: 'RED', r: 9, c: 5 },
-  { id: 23, type: '相', side: 'RED', r: 9, c: 6 }, { id: 24, type: '傌', side: 'RED', r: 9, c: 7 }, { id: 25, type: '俥', side: 'RED', r: 9, c: 8 },
-  { id: 26, type: '炮', side: 'RED', r: 7, c: 1 }, { id: 27, type: '炮', side: 'RED', r: 7, c: 7 },
-  { id: 28, type: '兵', side: 'RED', r: 6, c: 0 }, { id: 29, type: '兵', side: 'RED', r: 6, c: 2 }, { id: 30, type: '兵', side: 'RED', r: 6, c: 4 },
-  { id: 31, type: '兵', side: 'RED', r: 6, c: 6 }, { id: 32, type: '兵', side: 'RED', r: 6, c: 8 },
-];
-
-const GameChineseChess: React.FC = () => {
-    const [pieces, setPieces] = useState<Piece[]>(INITIAL_PIECES);
-    const [selectedId, setSelectedId] = useState<number | null>(null);
-    const [turn, setTurn] = useState<PieceSide>('RED');
-    const [hint, setHint] = useState('红方先行，请点击选择棋子');
-
-    const handleCellClick = (r: number, c: number) => {
-        const pieceAtCell = pieces.find(p => p.r === r && p.c === c);
-
-        if (selectedId === null) {
-            // 选择棋子
-            if (pieceAtCell && pieceAtCell.side === turn) {
-                setSelectedId(pieceAtCell.id);
-                setHint(`已选中 ${pieceAtCell.type}，请点击目标位置`);
-            }
-        } else {
-            // 已选中，尝试移动
-            const activePiece = pieces.find(p => p.id === selectedId)!;
-            
-            if (pieceAtCell && pieceAtCell.side === turn) {
-                // 切换选择
-                setSelectedId(pieceAtCell.id);
-                return;
-            }
-
-            // 执行移动 (这里简化了规则校验，允许基础落子，增加游戏的流畅体验)
-            // 如果目标位置有对方棋子，吃掉它
-            setPieces(prev => {
-                const filtered = prev.filter(p => p.r !== r || p.c !== c || p.id === selectedId);
-                return filtered.map(p => p.id === selectedId ? { ...p, r, c } : p);
-            });
-            
-            setSelectedId(null);
-            const nextTurn = turn === 'RED' ? 'BLACK' : 'RED';
-            setTurn(nextTurn);
-            setHint(`${nextTurn === 'RED' ? '红方' : '黑方'}回合，请思考走位`);
-
-            // 如果吃掉的是 将/帥，游戏结束
-            if (pieceAtCell && (pieceAtCell.type === '将' || pieceAtCell.type === '帥')) {
-                alert(`恭喜！${turn === 'RED' ? '红方' : '黑方'}赢得了比赛！`);
-                setPieces(INITIAL_PIECES);
-                setTurn('RED');
-                setHint('红方先行，请点击选择棋子');
-            }
-        }
-    };
-
-    const reset = () => {
-        setPieces(INITIAL_PIECES);
-        setSelectedId(null);
-        setTurn('RED');
-        setHint('红方先行，请点击选择棋子');
-    };
-
-    return (
-        <div className="flex flex-col items-center w-full max-w-sm select-none">
-            <div className="mb-6 w-full flex justify-between items-center bg-white dark:bg-slate-800 p-4 rounded-2xl shadow-md border-b-4 border-slate-200">
-                <div className="flex-1">
-                    <p className="text-xs text-slate-400 font-black">当前进程</p>
-                    <p className={`font-black ${turn === 'RED' ? 'text-red-600' : 'text-slate-800 dark:text-slate-200'}`}>
-                        {hint}
-                    </p>
-                </div>
-                <button onClick={reset} className="bg-slate-100 dark:bg-slate-700 px-4 py-2 rounded-xl text-xs font-black">重新摆盘</button>
-            </div>
-
-            <div className="relative bg-[#f4d0a0] p-2 md:p-4 rounded-lg shadow-2xl border-2 border-[#8b4513]">
-                {/* 棋盘背景网格 */}
-                <div className="grid grid-cols-8 grid-rows-9 border border-[#8b4513] bg-[#f4d0a0]">
-                    {Array(9 * 10).fill(0).map((_, i) => {
-                        const r = Math.floor(i / 9);
-                        const c = i % 9;
-                        const piece = pieces.find(p => p.r === r && p.c === c);
-                        const isSelected = selectedId === piece?.id;
-
-                        return (
-                            <div 
-                                key={i} 
-                                onClick={() => handleCellClick(r, c)}
-                                className={`w-8 h-8 md:w-10 md:h-10 border-[0.5px] border-[#8b4513]/20 flex items-center justify-center relative cursor-pointer`}
-                            >
-                                {/* 楚河汉界 */}
-                                {r === 4 && c === 4 && (
-                                    <div className="absolute inset-0 flex items-center justify-center whitespace-nowrap pointer-events-none text-[#8b4513]/40 font-black text-xs md:text-sm">
-                                        楚 河  漢 界
-                                    </div>
-                                )}
-                                
-                                {piece && (
-                                    <div className={`
-                                        w-7 h-7 md:w-9 md:h-9 rounded-full border-2 flex items-center justify-center font-black text-sm md:text-lg z-10 transition-transform active:scale-90 shadow-md
-                                        ${piece.side === 'RED' ? 'bg-[#f8e8c8] border-red-700 text-red-700' : 'bg-[#f8e8c8] border-zinc-800 text-zinc-800'}
-                                        ${isSelected ? 'scale-110 !border-blue-500 shadow-blue-500/50 shadow-lg ring-2 ring-blue-500 ring-offset-2' : ''}
-                                    `}>
-                                        {piece.type}
-                                    </div>
-                                )}
-                                
-                                {/* 备选路径点提示 (如果是当前选中的合法展示，这里暂简化) */}
-                                {isSelected && <div className="absolute w-2 h-2 bg-blue-400/50 rounded-full animate-ping"></div>}
-                            </div>
-                        );
-                    })}
-                </div>
-            </div>
-
-            <div className="mt-8 flex gap-6 text-xs md:text-sm font-bold text-slate-500 bg-white/50 dark:bg-slate-800/50 px-6 py-3 rounded-2xl">
-                <div className="flex items-center gap-2">🔴 红方</div>
-                <div className="flex items-center gap-2">⚫ 黑方</div>
-                <div className="flex items-center gap-2">⚠️ 模拟对弈版</div>
-            </div>
-        </div>
-    );
+const PIECE_LABEL: Record<string, { RED: string; BLACK: string }> = {
+  ju:    { RED: '俥', BLACK: '車' },
+  ma:    { RED: '傌', BLACK: '馬' },
+  xiang: { RED: '相', BLACK: '象' },
+  shi:   { RED: '仕', BLACK: '士' },
+  jiang: { RED: '帥', BLACK: '將' },
+  pao:   { RED: '炮', BLACK: '砲' },
+  zu:    { RED: '兵', BLACK: '卒' },
 };
 
+const INIT_CHESS: ChessPiece[] = [
+  // 黑方 (行0-4)
+  { id: 1, type: 'ju',    side: 'BLACK', r: 0, c: 0 },
+  { id: 2, type: 'ma',    side: 'BLACK', r: 0, c: 1 },
+  { id: 3, type: 'xiang', side: 'BLACK', r: 0, c: 2 },
+  { id: 4, type: 'shi',   side: 'BLACK', r: 0, c: 3 },
+  { id: 5, type: 'jiang', side: 'BLACK', r: 0, c: 4 },
+  { id: 6, type: 'shi',   side: 'BLACK', r: 0, c: 5 },
+  { id: 7, type: 'xiang', side: 'BLACK', r: 0, c: 6 },
+  { id: 8, type: 'ma',    side: 'BLACK', r: 0, c: 7 },
+  { id: 9, type: 'ju',    side: 'BLACK', r: 0, c: 8 },
+  { id: 10, type: 'pao',  side: 'BLACK', r: 2, c: 1 },
+  { id: 11, type: 'pao',  side: 'BLACK', r: 2, c: 7 },
+  { id: 12, type: 'zu',   side: 'BLACK', r: 3, c: 0 },
+  { id: 13, type: 'zu',   side: 'BLACK', r: 3, c: 2 },
+  { id: 14, type: 'zu',   side: 'BLACK', r: 3, c: 4 },
+  { id: 15, type: 'zu',   side: 'BLACK', r: 3, c: 6 },
+  { id: 16, type: 'zu',   side: 'BLACK', r: 3, c: 8 },
+  // 红方 (行9-5)
+  { id: 17, type: 'ju',    side: 'RED', r: 9, c: 0 },
+  { id: 18, type: 'ma',    side: 'RED', r: 9, c: 1 },
+  { id: 19, type: 'xiang', side: 'RED', r: 9, c: 2 },
+  { id: 20, type: 'shi',   side: 'RED', r: 9, c: 3 },
+  { id: 21, type: 'jiang', side: 'RED', r: 9, c: 4 },
+  { id: 22, type: 'shi',   side: 'RED', r: 9, c: 5 },
+  { id: 23, type: 'xiang', side: 'RED', r: 9, c: 6 },
+  { id: 24, type: 'ma',    side: 'RED', r: 9, c: 7 },
+  { id: 25, type: 'ju',    side: 'RED', r: 9, c: 8 },
+  { id: 26, type: 'pao',   side: 'RED', r: 7, c: 1 },
+  { id: 27, type: 'pao',   side: 'RED', r: 7, c: 7 },
+  { id: 28, type: 'zu',    side: 'RED', r: 6, c: 0 },
+  { id: 29, type: 'zu',    side: 'RED', r: 6, c: 2 },
+  { id: 30, type: 'zu',    side: 'RED', r: 6, c: 4 },
+  { id: 31, type: 'zu',    side: 'RED', r: 6, c: 6 },
+  { id: 32, type: 'zu',    side: 'RED', r: 6, c: 8 },
+];
+
+// ---- 走法核心规则引擎 ----
+const inBoard = (r: number, c: number) => r >= 0 && r <= 9 && c >= 0 && c <= 8;
+
+const getPieceAt = (pieces: ChessPiece[], r: number, c: number) =>
+  pieces.find(p => p.r === r && p.c === c) || null;
+
+// 车 - 直线无阻
+const juMoves = (p: ChessPiece, pieces: ChessPiece[]) => {
+  const moves: [number, number][] = [];
+  for (const [dr, dc] of [[-1,0],[1,0],[0,-1],[0,1]]) {
+    let [nr, nc] = [p.r + dr, p.c + dc];
+    while (inBoard(nr, nc)) {
+      const hit = getPieceAt(pieces, nr, nc);
+      if (hit) { if (hit.side !== p.side) moves.push([nr, nc]); break; }
+      moves.push([nr, nc]);
+      nr += dr; nc += dc;
+    }
+  }
+  return moves;
+};
+
+// 马 - 日字，别脚检测
+const maMoves = (p: ChessPiece, pieces: ChessPiece[]) => {
+  const moves: [number, number][] = [];
+  for (const [dr, dc, lr, lc] of [[-2,-1,-1,0],[-2,1,-1,0],[2,-1,1,0],[2,1,1,0],[-1,-2,0,-1],[-1,2,0,1],[1,-2,0,-1],[1,2,0,1]] as [number,number,number,number][]) {
+    if (getPieceAt(pieces, p.r+lr, p.c+lc)) continue; // 别腿
+    const [nr, nc] = [p.r+dr, p.c+dc];
+    if (!inBoard(nr, nc)) continue;
+    const hit = getPieceAt(pieces, nr, nc);
+    if (!hit || hit.side !== p.side) moves.push([nr, nc]);
+  }
+  return moves;
+};
+
+// 象/相 - 田字，不过河，别象眼
+const xiangMoves = (p: ChessPiece, pieces: ChessPiece[]) => {
+  const moves: [number, number][] = [];
+  for (const [dr, dc] of [[-2,-2],[-2,2],[2,-2],[2,2]]) {
+    if (getPieceAt(pieces, p.r+dr/2, p.c+dc/2)) continue; // 别象眼
+    const [nr, nc] = [p.r+dr, p.c+dc];
+    if (!inBoard(nr, nc)) continue;
+    // 不过河: 红方在 r>=5, 黑在 r<=4
+    if (p.side === 'RED' && nr < 5) continue;
+    if (p.side === 'BLACK' && nr > 4) continue;
+    const hit = getPieceAt(pieces, nr, nc);
+    if (!hit || hit.side !== p.side) moves.push([nr, nc]);
+  }
+  return moves;
+};
+
+// 士/仕 - 斜一格，不出九宫
+const shiMoves = (p: ChessPiece, pieces: ChessPiece[]) => {
+  const moves: [number, number][] = [];
+  const palaceRows = p.side === 'RED' ? [7, 8, 9] : [0, 1, 2];
+  const palaceCols = [3, 4, 5];
+  for (const [dr, dc] of [[-1,-1],[-1,1],[1,-1],[1,1]]) {
+    const [nr, nc] = [p.r+dr, p.c+dc];
+    if (!palaceRows.includes(nr) || !palaceCols.includes(nc)) continue;
+    const hit = getPieceAt(pieces, nr, nc);
+    if (!hit || hit.side !== p.side) moves.push([nr, nc]);
+  }
+  return moves;
+};
+
+// 将/帥 - 一格，九宫内，不露对面
+const jiangMoves = (p: ChessPiece, pieces: ChessPiece[]) => {
+  const moves: [number, number][] = [];
+  const palaceRows = p.side === 'RED' ? [7, 8, 9] : [0, 1, 2];
+  const palaceCols = [3, 4, 5];
+  for (const [dr, dc] of [[-1,0],[1,0],[0,-1],[0,1]]) {
+    const [nr, nc] = [p.r+dr, p.c+dc];
+    if (!palaceRows.includes(nr) || !palaceCols.includes(nc)) continue;
+    const hit = getPieceAt(pieces, nr, nc);
+    if (!hit || hit.side !== p.side) moves.push([nr, nc]);
+  }
+  // 禁止将帅对面（飞将）
+  const oppJiang = pieces.find(q => q.type === 'jiang' && q.side !== p.side);
+  return moves.filter(([nr, nc]) => {
+    if (!oppJiang || nc !== oppJiang.c) return true;
+    // 检查 nr 到 oppJiang.r 之间是否有棋子
+    const minR = Math.min(nr, oppJiang.r), maxR = Math.max(nr, oppJiang.r);
+    for (let tr = minR + 1; tr < maxR; tr++) {
+      if (getPieceAt(pieces, tr, nc)) return true; // 有遮挡，合法
+    }
+    return false; // 飞将，非法
+  });
+};
+
+// 炮 - 直线，吃需隔一子
+const paoMoves = (p: ChessPiece, pieces: ChessPiece[]) => {
+  const moves: [number, number][] = [];
+  for (const [dr, dc] of [[-1,0],[1,0],[0,-1],[0,1]]) {
+    let [nr, nc] = [p.r+dr, p.c+dc];
+    let screen = false;
+    while (inBoard(nr, nc)) {
+      const hit = getPieceAt(pieces, nr, nc);
+      if (!screen) {
+        if (hit) screen = true;
+        else moves.push([nr, nc]);
+      } else {
+        if (hit) { if (hit.side !== p.side) moves.push([nr, nc]); break; }
+      }
+      nr += dr; nc += dc;
+    }
+  }
+  return moves;
+};
+
+// 兵/卒 - 前进，过河后左右
+const zuMoves = (p: ChessPiece, pieces: ChessPiece[]) => {
+  const moves: [number, number][] = [];
+  const forward = p.side === 'RED' ? -1 : 1;
+  const crossRiver = p.side === 'RED' ? p.r < 5 : p.r > 4;
+  const dirs: [number, number][] = [[forward, 0]];
+  if (crossRiver) { dirs.push([0, -1]); dirs.push([0, 1]); }
+  for (const [dr, dc] of dirs) {
+    const [nr, nc] = [p.r+dr, p.c+dc];
+    if (!inBoard(nr, nc)) continue;
+    const hit = getPieceAt(pieces, nr, nc);
+    if (!hit || hit.side !== p.side) moves.push([nr, nc]);
+  }
+  return moves;
+};
+
+const getLegalMoves = (p: ChessPiece, pieces: ChessPiece[]): [number, number][] => {
+  let raw: [number, number][] = [];
+  switch (p.type) {
+    case 'ju':    raw = juMoves(p, pieces); break;
+    case 'ma':    raw = maMoves(p, pieces); break;
+    case 'xiang': raw = xiangMoves(p, pieces); break;
+    case 'shi':   raw = shiMoves(p, pieces); break;
+    case 'jiang': raw = jiangMoves(p, pieces); break;
+    case 'pao':   raw = paoMoves(p, pieces); break;
+    case 'zu':    raw = zuMoves(p, pieces); break;
+  }
+  // 过滤走后令己方将帅被将军的走法
+  return raw.filter(([nr, nc]) => {
+    const next = pieces
+      .filter(q => q.id !== p.id && !(q.r === nr && q.c === nc))
+      .concat([{ ...p, r: nr, c: nc }]);
+    return !isInCheck(p.side, next);
+  });
+};
+
+// 检测某方将帅是否被将军
+const isInCheck = (side: ChessSide, pieces: ChessPiece[]) => {
+  const myJiang = pieces.find(p => p.type === 'jiang' && p.side === side);
+  if (!myJiang) return true; // 将帅已没，被将
+  const opp = side === 'RED' ? 'BLACK' : 'RED';
+  return pieces.filter(p => p.side === opp).some(op => {
+    let raw: [number, number][] = [];
+    switch (op.type) {
+      case 'ju': raw = juMoves(op, pieces); break;
+      case 'ma': raw = maMoves(op, pieces); break;
+      case 'pao': raw = paoMoves(op, pieces); break;
+      case 'zu': raw = zuMoves(op, pieces); break;
+      case 'xiang': raw = xiangMoves(op, pieces); break;
+      case 'shi': raw = shiMoves(op, pieces); break;
+      case 'jiang': raw = jiangMoves(op, pieces); break;
+    }
+    return raw.some(([r, c]) => r === myJiang.r && c === myJiang.c);
+  });
+};
+
+// 简单AI - 随机从合法走法里选一步
+const blackAiMove = (pieces: ChessPiece[]): { piece: ChessPiece; to: [number, number] } | null => {
+  const blacks = pieces.filter(p => p.side === 'BLACK');
+  const allMoves: { piece: ChessPiece; to: [number, number] }[] = [];
+  for (const b of blacks) {
+    for (const to of getLegalMoves(b, pieces)) {
+      allMoves.push({ piece: b, to });
+    }
+  }
+  if (allMoves.length === 0) return null;
+  // 优先吃子
+  const eating = allMoves.filter(m => getPieceAt(pieces, m.to[0], m.to[1]));
+  const pool = eating.length > 0 ? eating : allMoves;
+  return pool[Math.floor(Math.random() * pool.length)];
+};
+
+const GameChineseChess: React.FC = () => {
+  const [pieces, setPieces] = useState<ChessPiece[]>(() => INIT_CHESS.map(p => ({ ...p })));
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [legalMoves, setLegalMoves] = useState<[number, number][]>([]);
+  const [turn, setTurn] = useState<ChessSide>('RED');
+  const [status, setStatus] = useState<string>('红方先行，点击选择棋子');
+  const [isThinking, setIsThinking] = useState(false);
+  const [winner, setWinner] = useState<ChessSide | null>(null);
+
+  const reset = () => {
+    setPieces(INIT_CHESS.map(p => ({ ...p })));
+    setSelectedId(null);
+    setLegalMoves([]);
+    setTurn('RED');
+    setStatus('红方先行，点击选择棋子');
+    setIsThinking(false);
+    setWinner(null);
+  };
+
+  const applyMove = (prevPieces: ChessPiece[], pid: number, tr: number, tc: number): ChessPiece[] => {
+    return prevPieces
+      .filter(p => !(p.r === tr && p.c === tc && p.id !== pid))
+      .map(p => p.id === pid ? { ...p, r: tr, c: tc } : p);
+  };
+
+  const handleCellClick = (r: number, c: number) => {
+    if (isThinking || winner) return;
+    const pieceAt = pieces.find(p => p.r === r && p.c === c);
+
+    if (selectedId === null) {
+      if (pieceAt && pieceAt.side === turn) {
+        const moves = getLegalMoves(pieceAt, pieces);
+        setSelectedId(pieceAt.id);
+        setLegalMoves(moves);
+        setStatus(`已选中「${PIECE_LABEL[pieceAt.type][pieceAt.side]}」- 蓝点为合法落点`);
+      }
+    } else {
+      // 点击己方棋子 -> 换选
+      if (pieceAt && pieceAt.side === turn) {
+        const moves = getLegalMoves(pieceAt, pieces);
+        setSelectedId(pieceAt.id);
+        setLegalMoves(moves);
+        setStatus(`已选中「${PIECE_LABEL[pieceAt.type][pieceAt.side]}」- 蓝点为合法落点`);
+        return;
+      }
+      // 判断是否是合法落点
+      const isLegal = legalMoves.some(([lr, lc]) => lr === r && lc === c);
+      if (!isLegal) {
+        setSelectedId(null);
+        setLegalMoves([]);
+        setStatus('该位置不可落子，请重新选择');
+        return;
+      }
+      // 执行红方落子
+      const newPieces = applyMove(pieces, selectedId, r, c);
+      setSelectedId(null);
+      setLegalMoves([]);
+
+      // 检查胜负
+      const hasBlackJiang = newPieces.some(p => p.type === 'jiang' && p.side === 'BLACK');
+      if (!hasBlackJiang) {
+        setPieces(newPieces);
+        setWinner('RED');
+        setStatus('🎉 红方胜！');
+        return;
+      }
+
+      const blackInCheck = isInCheck('BLACK', newPieces);
+      setTurn('BLACK');
+      setStatus(blackInCheck ? '⚠️ 黑方被将军！AI 思考中...' : '🤖 AI 思考中...');
+      setIsThinking(true);
+      setPieces(newPieces);
+
+      // AI落子
+      setTimeout(() => {
+        const aiMove = blackAiMove(newPieces);
+        if (!aiMove) {
+          setWinner('RED');
+          setStatus('🎉 红方胜（黑方无路可走）！');
+          setIsThinking(false);
+          return;
+        }
+        const afterAi = applyMove(newPieces, aiMove.piece.id, aiMove.to[0], aiMove.to[1]);
+        const hasRedJiang = afterAi.some(p => p.type === 'jiang' && p.side === 'RED');
+        setPieces(afterAi);
+        if (!hasRedJiang) {
+          setWinner('BLACK');
+          setStatus('😢 黑方胜！');
+        } else {
+          const redInCheck = isInCheck('RED', afterAi);
+          setStatus(redInCheck ? '⚠️ 红方被将军！请应将' : '🎮 轮到红方，点击选择棋子');
+          setTurn('RED');
+        }
+        setIsThinking(false);
+      }, 800);
+    }
+  };
+
+  const CELL_SIZE = 38; // px per cell
+  const BOARD_COLS = 9;
+  const BOARD_ROWS = 10;
+
+  return (
+    <div className="flex flex-col items-center w-full max-w-[380px] select-none">
+      {/* 状态栏 */}
+      <div className="mb-3 w-full flex justify-between items-center bg-white dark:bg-slate-800 px-4 py-3 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700">
+        <div className="flex-1 min-w-0 pr-3">
+          <p className={`font-black text-sm leading-snug truncate ${turn === 'RED' && !winner ? 'text-red-600' : winner === 'RED' ? 'text-emerald-600' : 'text-slate-700 dark:text-slate-200'}`}>
+            {status}
+          </p>
+        </div>
+        <button onClick={reset} className="shrink-0 bg-slate-100 dark:bg-slate-700 px-3 py-1.5 rounded-xl text-xs font-black active:scale-95">重新摆盘</button>
+      </div>
+
+      {/* 棋盘容器（背景木纹色，用 SVG 画线） */}
+      <div
+        className="relative rounded-xl shadow-2xl border-4 border-[#7a3e0e] overflow-hidden"
+        style={{ background: '#f5c78a', width: CELL_SIZE * (BOARD_COLS - 1) + 60, height: CELL_SIZE * (BOARD_ROWS - 1) + 60 }}
+      >
+        {/* SVG 棋盘线 */}
+        <svg
+          className="absolute top-0 left-0 pointer-events-none"
+          style={{ width: '100%', height: '100%' }}
+          viewBox={`0 0 ${CELL_SIZE * (BOARD_COLS-1) + 60} ${CELL_SIZE * (BOARD_ROWS-1) + 60}`}
+        >
+          {/* 竖线 */}
+          {Array.from({ length: BOARD_COLS }, (_, c) => (
+            <React.Fragment key={`v${c}`}>
+              {/* 上半 */}
+              <line x1={30 + c * CELL_SIZE} y1={30} x2={30 + c * CELL_SIZE} y2={30 + 4 * CELL_SIZE} stroke="#7a3e0e" strokeWidth="1.2"/>
+              {/* 下半 */}
+              <line x1={30 + c * CELL_SIZE} y1={30 + 5 * CELL_SIZE} x2={30 + c * CELL_SIZE} y2={30 + 9 * CELL_SIZE} stroke="#7a3e0e" strokeWidth="1.2"/>
+            </React.Fragment>
+          ))}
+          {/* 横线 */}
+          {Array.from({ length: BOARD_ROWS }, (_, r) => (
+            <line key={`h${r}`} x1={30} y1={30 + r * CELL_SIZE} x2={30 + 8 * CELL_SIZE} y2={30 + r * CELL_SIZE} stroke="#7a3e0e" strokeWidth="1.2"/>
+          ))}
+          {/* 楚河汉界 */}
+          <text x={30 + CELL_SIZE * 1.2} y={30 + 4.62 * CELL_SIZE} fill="#7a3e0e" fontSize="13" fontWeight="bold" opacity="0.7">楚　河</text>
+          <text x={30 + CELL_SIZE * 5} y={30 + 4.62 * CELL_SIZE} fill="#7a3e0e" fontSize="13" fontWeight="bold" opacity="0.7">漢　界</text>
+          {/* 将/帅九宫 斜线 */}
+          <line x1={30+3*CELL_SIZE} y1={30} x2={30+5*CELL_SIZE} y2={30+2*CELL_SIZE} stroke="#7a3e0e" strokeWidth="1" opacity="0.6"/>
+          <line x1={30+5*CELL_SIZE} y1={30} x2={30+3*CELL_SIZE} y2={30+2*CELL_SIZE} stroke="#7a3e0e" strokeWidth="1" opacity="0.6"/>
+          <line x1={30+3*CELL_SIZE} y1={30+7*CELL_SIZE} x2={30+5*CELL_SIZE} y2={30+9*CELL_SIZE} stroke="#7a3e0e" strokeWidth="1" opacity="0.6"/>
+          <line x1={30+5*CELL_SIZE} y1={30+7*CELL_SIZE} x2={30+3*CELL_SIZE} y2={30+9*CELL_SIZE} stroke="#7a3e0e" strokeWidth="1" opacity="0.6"/>
+        </svg>
+
+        {/* 可点击交叉点 */}
+        {Array.from({ length: BOARD_ROWS }, (_, r) =>
+          Array.from({ length: BOARD_COLS }, (_, c) => {
+            const isLegal = legalMoves.some(([lr, lc]) => lr === r && lc === c);
+            const p = pieces.find(p => p.r === r && p.c === c);
+            const isSel = p && p.id === selectedId;
+            return (
+              <div
+                key={`${r}-${c}`}
+                onClick={() => handleCellClick(r, c)}
+                className="absolute cursor-pointer flex items-center justify-center"
+                style={{
+                  left: 30 + c * CELL_SIZE - CELL_SIZE / 2,
+                  top: 30 + r * CELL_SIZE - CELL_SIZE / 2,
+                  width: CELL_SIZE,
+                  height: CELL_SIZE,
+                  zIndex: p ? 10 : 5,
+                }}
+              >
+                {/* 合法落点蓝点 */}
+                {isLegal && !p && (
+                  <div className="w-4 h-4 rounded-full bg-blue-500/70 border border-blue-700/30 shadow animate-pulse" />
+                )}
+                {/* 棋子 */}
+                {p && (
+                  <div className={`
+                    w-9 h-9 rounded-full border-2 flex items-center justify-center font-black text-base z-10 shadow-md transition-all duration-200 select-none
+                    ${p.side === 'RED'
+                      ? 'bg-red-50 border-red-700 text-red-700'
+                      : 'bg-slate-50 border-slate-800 text-slate-900'}
+                    ${isSel ? 'scale-110 ring-2 ring-blue-500 ring-offset-1 !bg-blue-50 shadow-blue-400/50 shadow-lg' : 'hover:scale-105'}
+                    ${isLegal ? 'ring-2 ring-blue-400/60' : ''}
+                  `}>
+                    {PIECE_LABEL[p.type][p.side]}
+                  </div>
+                )}
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {/* 图例 */}
+      <div className="mt-4 flex gap-4 text-xs font-bold text-slate-500 bg-white/60 dark:bg-slate-800/60 px-5 py-2.5 rounded-2xl">
+        <div className="flex items-center gap-1.5">
+          <div className="w-4 h-4 rounded-full bg-red-50 border-2 border-red-700"></div>
+          <span>红方（你）</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-4 h-4 rounded-full bg-slate-50 border-2 border-slate-800"></div>
+          <span>黑方（AI）</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-3 h-3 rounded-full bg-blue-500/70"></div>
+          <span>合法落点</span>
+        </div>
+      </div>
+    </div>
+  );
+};
