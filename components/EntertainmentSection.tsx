@@ -1247,20 +1247,83 @@ const isInCheck = (side: ChessSide, pieces: ChessPiece[]) => {
   });
 };
 
-// 简单AI - 随机从合法走法里选一步
+// 棋子价值评估字典
+type PieceType = 'ju' | 'ma' | 'xiang' | 'shi' | 'jiang' | 'pao' | 'zu';
+const PIECE_VALUES: Record<PieceType, number> = {
+  jiang: 10000,
+  ju: 900,
+  pao: 450,
+  ma: 400,
+  xiang: 200,
+  shi: 200,
+  zu: 100
+};
+
+// 简单局面静态评估 (黑方视角)
+const evaluateBoard = (pieces: ChessPiece[]) => {
+  let score = 0;
+  for (const p of pieces) {
+    const val = PIECE_VALUES[p.type];
+    // 过河兵价值增加 (此处简易加分)
+    let posBonus = 0;
+    if (p.type === 'zu') {
+      if (p.side === 'BLACK' && p.r > 4) posBonus = 50 + p.r * 10;
+      if (p.side === 'RED' && p.r < 5) posBonus = 50 + (9 - p.r) * 10;
+    }
+    if (p.side === 'BLACK') score += (val + posBonus);
+    else score -= (val + posBonus);
+  }
+  return score;
+};
+
+// 一层深度的贪心 AI，优先寻找吃高价值子、有保护、并避免送吃的走法
 const blackAiMove = (pieces: ChessPiece[]): { piece: ChessPiece; to: [number, number] } | null => {
   const blacks = pieces.filter(p => p.side === 'BLACK');
-  const allMoves: { piece: ChessPiece; to: [number, number] }[] = [];
+  const allMoves: { piece: ChessPiece; to: [number, number]; score: number }[] = [];
+  
   for (const b of blacks) {
     for (const to of getLegalMoves(b, pieces)) {
-      allMoves.push({ piece: b, to });
+      // 模拟这一步
+      const nextPieces = pieces
+        .filter(p => !(p.r === to[0] && p.c === to[1] && p.id !== b.id))
+        .map(p => p.id === b.id ? { ...p, r: to[0], c: to[1] } : p);
+      
+      let moveScore = evaluateBoard(nextPieces);
+
+      // 附加一些简单的开局经验和避免送吃策略
+      // 如果走了之后，对方立刻能吃我方大子，扣分
+      // 为防止搜得太深卡顿，这里只做极简的直接应答检查
+      const oppNextMoves = [];
+      const reds = nextPieces.filter(p => p.side === 'RED');
+      for (const r of reds) {
+          const rMoves = getLegalMoves(r, nextPieces);
+          // 如果对方下一步能吃我们的棋子
+          for (const rm of rMoves) {
+             const target = getPieceAt(nextPieces, rm[0], rm[1]);
+             if (target && target.side === 'BLACK') {
+                moveScore -= PIECE_VALUES[target.type] * 0.8; // 惩罚送吃
+             }
+          }
+      }
+      
+      // 鼓励出车出马，稍微惩罚炮一上来就压底
+      if (b.type === 'ju' && b.r === 0) moveScore += 30; // 鼓励车动
+      if (b.type === 'ma' && b.r === 0) moveScore += 20; // 鼓励马动
+      if (b.type === 'pao' && to[0] === 9) moveScore -= 50; // 不要在没好机会时盲目沉底炮
+      
+      allMoves.push({ piece: b, to, score: moveScore });
     }
   }
+
   if (allMoves.length === 0) return null;
-  // 优先吃子
-  const eating = allMoves.filter(m => getPieceAt(pieces, m.to[0], m.to[1]));
-  const pool = eating.length > 0 ? eating : allMoves;
-  return pool[Math.floor(Math.random() * pool.length)];
+
+  // 按得分排序，加入一小点随机性（同分或相近分数之间）避免每次走法一模一样
+  allMoves.sort((a, b) => b.score - a.score);
+  
+  // 选取得分前 3 的走法中随机挑选，并且分数不能比最好分数低超过 50 分
+  const bestScore = allMoves[0].score;
+  const topChoices = allMoves.filter(m => bestScore - m.score < 50).slice(0, 3);
+  return topChoices[Math.floor(Math.random() * topChoices.length)];
 };
 
 const GameChineseChess: React.FC = () => {
@@ -1624,29 +1687,75 @@ const findAIMove = (hand: Card[], lastPlay: { combo: any; cards: Card[] } | null
   if (!lastPlay) return [sorted[0]]; 
 
   // 如果必须压，尝试相同张数和类型
-  // 简陋型：暴力组合搜索，这里为防卡顿只做有限穷举：找比当前大的单/对/三/炸弹
+  // 更智能的AI：能搜索所有匹配类型。为了避免卡顿做有限制搜索。
+  const counts: Record<number, Card[]> = {};
+  sorted.forEach(c => { counts[c.weight] = counts[c.weight] || []; counts[c.weight].push(c); });
+  const sortedWeights = Object.keys(counts).map(Number).sort((a,b)=>a-b);
+
   if (lastPlay.combo.type === 'single') {
      const c = sorted.find(x => x.weight > lastPlay.combo.weight);
      if (c) return [c];
   } else if (lastPlay.combo.type === 'pair') {
-     const counts: Record<number, Card[]> = {};
-     sorted.forEach(c => { counts[c.weight] = counts[c.weight] || []; counts[c.weight].push(c); });
-     for (const w of Object.keys(counts).map(Number).sort((a,b)=>a-b)) {
+     for (const w of sortedWeights) {
          if (w > lastPlay.combo.weight && counts[w].length >= 2) return counts[w].slice(0, 2);
      }
-  } else if (lastPlay.combo.type === 'three' || lastPlay.combo.type === 'three_one') {
-     const counts: Record<number, Card[]> = {};
-     sorted.forEach(c => { counts[c.weight] = counts[c.weight] || []; counts[c.weight].push(c); });
-     for (const w of Object.keys(counts).map(Number).sort((a,b)=>a-b)) {
+  } else if (lastPlay.combo.type === 'three' || lastPlay.combo.type === 'three_one' || lastPlay.combo.type === 'three_two') {
+     for (const w of sortedWeights) {
          if (w > lastPlay.combo.weight && counts[w].length >= 3) {
              let play = counts[w].slice(0, 3);
              if (lastPlay.combo.type === 'three_one') {
-                 // 随便找个不是这个w的单牌
                  const single = sorted.find(c => c.weight !== w);
                  if (single) play.push(single);
-                 else continue; // 没零牌可带
+                 else continue;
+             } else if (lastPlay.combo.type === 'three_two') {
+                 const pairW = sortedWeights.find(pw => pw !== w && counts[pw].length >= 2);
+                 if (pairW) play.push(...counts[pairW].slice(0, 2));
+                 else continue;
              }
              return play;
+         }
+     }
+  } else if (lastPlay.combo.type === 'straight') {
+     // 找更大的顺子
+     const reqLen = lastPlay.combo.length;
+     for (let startIdx = 0; startIdx <= sortedWeights.length - reqLen; startIdx++) {
+         const w = sortedWeights[startIdx];
+         if (w > lastPlay.combo.weight && w < 15) { // < 2
+             const cand = [];
+             let valid = true;
+             for (let step = 0; step < reqLen; step++) {
+                 if (!counts[w - step]) { valid = false; break; }
+                 cand.push(counts[w - step][0]);
+             }
+             if (valid) return cand;
+         }
+     }
+  } else if (lastPlay.combo.type === 'straight_pair') {
+     const reqLen = lastPlay.combo.length / 2;
+     for (let startIdx = 0; startIdx <= sortedWeights.length - reqLen; startIdx++) {
+         const w = sortedWeights[startIdx];
+         if (w > lastPlay.combo.weight && w < 15) {
+             const cand = [];
+             let valid = true;
+             for (let step = 0; step < reqLen; step++) {
+                 if (!counts[w - step] || counts[w - step].length < 2) { valid = false; break; }
+                 cand.push(...counts[w - step].slice(0, 2));
+             }
+             if (valid) return cand;
+         }
+     }
+  } else if (lastPlay.combo.type === 'airplane') {
+      const reqLen = lastPlay.combo.length / 3;
+      for (let startIdx = 0; startIdx <= sortedWeights.length - reqLen; startIdx++) {
+         const w = sortedWeights[startIdx];
+         if (w > lastPlay.combo.weight && w < 15) {
+             const cand = [];
+             let valid = true;
+             for (let step = 0; step < reqLen; step++) {
+                 if (!counts[w - step] || counts[w - step].length < 3) { valid = false; break; }
+                 cand.push(...counts[w - step].slice(0, 3));
+             }
+             if (valid) return cand;
          }
      }
   }
@@ -1681,7 +1790,8 @@ const GameCardView: React.FC<{ card: Card; onClick?: () => void; isHidden?: bool
   return (
     <div 
       onClick={onClick}
-      className={`relative bg-white flex flex-col items-center shadow-md border border-slate-200 cursor-pointer hover:shadow-xl transition-transform ${card.selected ? '-translate-y-4' : ''} ${small ? 'w-10 h-14 rounded p-0.5 text-[10px]' : 'w-16 h-24 md:w-20 md:h-28 rounded-md p-1 md:p-2 text-sm md:text-lg'} ${className}`}
+      style={{ userSelect: 'none' }}
+      className={`relative bg-white flex flex-col items-center shadow-md border border-slate-200 cursor-pointer hover:shadow-xl transition-transform ${card.selected ? '-translate-y-2 md:-translate-y-4 shadow-xl' : ''} ${small ? 'w-10 h-14 rounded p-0.5 text-[10px]' : 'w-[11vw] max-w-[4rem] h-[16vw] max-h-[6rem] md:w-16 md:h-24 lg:w-20 lg:h-28 rounded-md p-1 md:p-2 text-xs md:text-sm lg:text-lg'} ${className}`}
     >
       <div className={`font-black self-start leading-none ${isRed ? 'text-red-600' : 'text-slate-800'}`}>
         {card.value}
@@ -1926,17 +2036,16 @@ const GameDoudizhu = () => {
        }
     }, [turn, phase]);
 
-    // 计算被挡住导致出牌重叠的 className
     const getCardSpacing = (totalCards: number) => {
-         if (totalCards > 15) return 'mr-[-22px] md:mr-[-30px]';
-         if (totalCards > 10) return 'mr-[-18px] md:mr-[-25px]';
-         return 'mr-[-14px] md:mr-[-18px]';
+         if (totalCards > 15) return 'mr-[-5vw] md:mr-[-30px]';
+         if (totalCards > 10) return 'mr-[-4vw] md:mr-[-25px]';
+         return 'mr-[-3vw] md:mr-[-18px]';
     };
 
     const getHandSpacing = (totalCards: number) => {
-         if (totalCards > 17) return 'mr-[-24px] md:mr-[-34px]';
-         if (totalCards > 10) return 'mr-[-20px] md:mr-[-30px]';
-         return 'mr-[-16px] md:mr-[-20px]';
+         if (totalCards > 17) return 'mr-[-6vw] md:mr-[-34px]';
+         if (totalCards > 10) return 'mr-[-5vw] md:mr-[-30px]';
+         return 'mr-[-4vw] md:mr-[-20px]';
     };
 
     if (phase === 'init') {
@@ -2104,15 +2213,15 @@ const GameDoudizhu = () => {
                 </div>
 
                 {/* 玩家手牌区 (优化卡牌过密被防挡出的情况) */}
-                <div className="w-full bg-emerald-950 p-4 md:p-6 flex flex-col items-center relative min-h-[140px] md:min-h-[160px] z-20">
-                   <div className="absolute top-2 left-4 flex flex-col items-center z-10">
-                        <div className="w-12 h-12 bg-emerald-500/20 rounded-full border border-emerald-400 flex items-center justify-center text-xl shadow-sm relative">
+                <div className="w-full bg-emerald-950 px-2 py-4 md:p-6 flex flex-col items-center justify-end relative h-auto md:min-h-[160px] z-20 flex-shrink-0">
+                   <div className="absolute top-2 left-2 md:left-4 flex flex-col items-center z-10">
+                        <div className="w-10 h-10 md:w-12 md:h-12 bg-emerald-500/20 rounded-full border border-emerald-400 flex items-center justify-center text-lg md:text-xl shadow-sm relative">
                             🧑
-                            {landlord === 0 && <div className="absolute -top-3 -right-2 text-2xl drop-shadow-md">👑</div>}
+                            {landlord === 0 && <div className="absolute -top-3 -right-2 text-xl md:text-2xl drop-shadow-md">👑</div>}
                         </div>
                     </div>
 
-                   <div className={`flex justify-center w-full px-2 pl-6 pt-2 transition-all`}>
+                   <div className={`flex justify-center w-full px-1 pl-4 md:pl-6 pt-4 transition-all overflow-visible`}>
                         {players[0].map((c, idx) => (
                             <div key={c.id} style={{ zIndex: idx }} className={`transition-all duration-300 ease-out ${idx !== players[0].length - 1 ? getHandSpacing(players[0].length) : ''}`}>
                                 <GameCardView card={c} onClick={() => phase === 'playing' && turn === 0 && toggleSelect(c.id)} />
@@ -2127,8 +2236,129 @@ const GameDoudizhu = () => {
 
     if (isFullscreen) {
         return createPortal(
-            <div className="fixed inset-0 z-[99999] bg-black flex items-center justify-center">
-                {content}
+            <div className="fixed inset-0 z-[99999] bg-black flex items-center justify-center overscroll-none touch-none">
+                <style>{`
+                    body { overflow: hidden; }
+                    #fullscreen-ddz-container {
+                       width: 100vh;
+                       height: 100vw;
+                       transform: rotate(90deg);
+                       transform-origin: center center;
+                       position: absolute;
+                       top: calc(50% - 50vw);
+                       left: calc(50% - 50vh);
+                       display: flex;
+                    }
+                `}</style>
+                <div id="fullscreen-ddz-container">
+                    <div className="flex flex-col flex-1 w-full h-full bg-emerald-700 overflow-hidden text-slate-100 font-sans shadow-2xl">
+                        {/* 顶栏 */}
+                        <div className="w-full bg-emerald-950 px-4 py-1.5 flex justify-between items-center shadow-md relative z-30 shrink-0">
+                            <button onClick={() => setIsFullscreen(false)} className="text-white hover:text-emerald-400 font-black flex items-center gap-1 bg-white/10 px-3 py-1 rounded-lg text-sm">❌ 退出</button>
+                            <div className="flex items-center">
+                                <span className="font-bold text-xs text-emerald-300 mr-2">底牌</span>
+                                {bottomCards.length > 0 ? bottomCards.map((c, i) => (
+                                    <div key={i} className={i !== bottomCards.length - 1 ? 'mr-[-15px]' : ''}>
+                                        <GameCardView card={c} small isHidden={phase === 'calling' || phase === 'ready' || phase === 'dealing'} />
+                                    </div>
+                                )) : <div className="flex">{[1,2,3].map(i => <div key={i} className="w-6 h-8 bg-emerald-800/50 border border-emerald-900 rounded-md mr-1 last:mr-0"></div>)}</div>}
+                            </div>
+                            <div className="font-black text-xs text-emerald-400">倍数: {callScore || 1}</div>
+                        </div>
+
+                        {/* 桌面 */}
+                        <div className="relative w-full flex-1 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-emerald-600 to-emerald-800 p-2 shadow-inner overflow-hidden flex flex-col justify-center">
+                            {/* 水印 */}
+                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-10"><span className="text-8xl font-black">赛</span></div>
+                            
+                            {/* AI 2 */}
+                            <div className="absolute top-4 left-4 flex flex-col items-center scale-90 md:scale-100">
+                                <div className="w-10 h-10 bg-white/20 rounded-full border border-emerald-300 flex items-center justify-center text-lg shadow-lg relative">🤖{landlord === 2 && <div className="absolute -top-2 -right-2 text-xl drop-shadow-md">👑</div>}</div>
+                                <div className="mt-1 bg-black/40 px-2 py-0.5 rounded-full text-[10px] font-bold text-yellow-300">牌数: {players[2].length}</div>
+                                {msgs[2] && <div className="absolute top-0 left-12 bg-white text-slate-800 px-2 py-1 object-none rounded-lg shadow-lg font-bold text-xs whitespace-nowrap z-20 tooltip-arrow-left">{msgs[2]}</div>}
+                            </div>
+
+                            {/* AI 1 */}
+                            <div className="absolute top-4 right-4 flex flex-col items-center scale-90 md:scale-100">
+                                <div className="w-10 h-10 bg-white/20 rounded-full border border-emerald-300 flex items-center justify-center text-lg shadow-lg relative">🤖{landlord === 1 && <div className="absolute -top-2 -right-2 text-xl drop-shadow-md">👑</div>}</div>
+                                <div className="mt-1 bg-black/40 px-2 py-0.5 rounded-full text-[10px] font-bold text-yellow-300">牌数: {players[1].length}</div>
+                                {msgs[1] && <div className="absolute top-0 right-12 bg-white text-slate-800 px-2 py-1 rounded-lg shadow-lg font-bold text-xs whitespace-nowrap z-20 tooltip-arrow-right">{msgs[1]}</div>}
+                            </div>
+
+                            {/* 出牌区 */}
+                            <div className="absolute inset-0 flex justify-center items-center pointer-events-none z-10 pt-4">
+                                {(phase === 'ready' || phase === 'dealing') && (
+                                   <div className="flex flex-col items-center">
+                                       <div className="w-16 h-24 bg-emerald-800 rounded-xl border-2 border-emerald-900 shadow-2xl relative flex items-center justify-center mb-4">
+                                            <div className="w-full h-full bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-30 mix-blend-overlay"></div>
+                                       </div>
+                                       {phase === 'ready' && <button onClick={startDealing} className="pointer-events-auto bg-amber-500 text-amber-950 px-6 py-2 rounded-full font-black text-sm shadow-lg active:scale-95">洗牌发牌</button>}
+                                       {phase === 'dealing' && <div className="text-yellow-300 font-bold animate-pulse text-sm">发牌中...</div>}
+                                   </div>
+                                )}
+                                {phase !== 'ready' && phase !== 'dealing' && tableCards && (
+                                    <div className="flex justify-center px-2 scale-90 origin-bottom">
+                                        {tableCards.cards.map((c, i) => (
+                                            <div key={c.id} style={{ zIndex: i }} className={i !== tableCards.cards.length - 1 ? getCardSpacing(tableCards.cards.length) : ''}>
+                                                <GameCardView card={c} small />
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            {playEffect && (
+                                <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-50 animate-[ping_1.5s_cubic-bezier(0,0,0.2,1)_forwards]">
+                                    <div className="text-5xl font-black text-yellow-300 drop-shadow-[0_0_15px_rgba(234,179,8,1)] stroke-red-600 stroke-2" style={{ WebkitTextStroke: '1px red' }}>
+                                        {playEffect.combo}
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-20">
+                                {msgs[0] && <div className="bg-white text-slate-800 px-3 py-1 rounded-full shadow-lg font-bold text-xs whitespace-nowrap">{msgs[0]}</div>}
+                            </div>
+                        </div>
+
+                        {/* 按钮群与手牌统一下沉合体以节省空间 */}
+                        <div className="w-full bg-emerald-950 px-2 py-2 flex flex-col justify-end shrink-0 relative z-30 space-y-2">
+                             {/* 操作面板 */}
+                             <div className="flex justify-center gap-2">
+                                {phase === 'calling' && turn === 0 && (
+                                    <>
+                                        <button onClick={() => handleCall(0)} className="bg-slate-500 hover:bg-slate-400 text-white px-4 py-1.5 rounded-full font-bold text-xs shadow-md">不叫</button>
+                                        <button onClick={() => handleCall(1)} className="bg-emerald-500 hover:bg-emerald-400 text-white px-4 py-1.5 rounded-full font-bold text-xs shadow-md">1分</button>
+                                        <button onClick={() => handleCall(2)} className="bg-emerald-500 hover:bg-emerald-400 text-white px-4 py-1.5 rounded-full font-bold text-xs shadow-md">2分</button>
+                                        <button onClick={() => handleCall(3)} className="bg-amber-500 px-4 py-1.5 rounded-full font-bold text-xs shadow-[0_0_10px_rgba(245,158,11,0.5)]">3分(抢)</button>
+                                    </>
+                                )}
+                                {phase === 'playing' && turn === 0 && (
+                                    <>
+                                        <button onClick={handlePass} disabled={!lastPlay || passCount >= 2} className="bg-slate-500 disabled:opacity-50 text-white px-6 py-1.5 rounded-full font-bold text-xs shadow-md">不出</button>
+                                        <button onClick={handlePlayCard} className="bg-amber-500 disabled:opacity-50 text-amber-950 px-6 py-1.5 rounded-full font-bold text-xs shadow-[0_0_10px_rgba(245,158,11,0.5)] transform scale-105">出牌</button>
+                                    </>
+                                )}
+                                {(phase === 'calling' || phase === 'playing') && turn !== 0 && (
+                                    <div className="text-yellow-300 font-bold text-xs flex justify-center w-full"><span className="animate-spin mr-1">⏳</span> AI 思考中...</div>
+                                )}
+                                {phase === 'landlord_anim' && <div className="text-emerald-300 font-bold text-xs animate-pulse mx-auto">🎉 确立地主，底牌归入...</div>}
+                                {phase === 'end' && (
+                                   <div className="flex items-center justify-between w-full px-4"><div className="text-sm font-black text-amber-300">{winner === 0 ? '🏆 恭喜大获全胜！' : '😢 失败！'}</div><button onClick={prepareGame} className="bg-emerald-500 px-6 py-1.5 rounded-full font-bold text-xs shadow-lg outline outline-2 outline-emerald-300/30">再来</button></div>
+                                )}
+                             </div>
+                             
+                             {/* 手牌 */}
+                             <div className="flex justify-center w-full pb-1 transition-all overflow-visible">
+                                <div className="absolute left-2 bottom-3 w-8 h-8 bg-emerald-500/20 rounded-full border border-emerald-400 flex items-center justify-center text-sm shadow-sm z-40">🧑{landlord === 0 && <div className="absolute -top-2 -right-1 text-lg drop-shadow-md">👑</div>}</div>
+                                {players[0].map((c, idx) => (
+                                    <div key={c.id} style={{ zIndex: idx }} className={`transition-all duration-300 ease-out ${idx !== players[0].length - 1 ? getHandSpacing(players[0].length) : ''}`}>
+                                        <GameCardView card={c} onClick={() => phase === 'playing' && turn === 0 && toggleSelect(c.id)} />
+                                    </div>
+                                ))}
+                             </div>
+                        </div>
+                    </div>
+                </div>
             </div>,
             document.body
         );
