@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import API from '../services/apiService';
 
 type GameType = '2048' | 'TicTacToe' | 'Snake' | 'PianoTiles' | 'Gomoku' | 'ChineseChess' | null;
@@ -1667,10 +1668,10 @@ const findAIMove = (hand: Card[], lastPlay: { combo: any; cards: Card[] } | null
   return []; // 不起
 };
 
-const GameCardView: React.FC<{ card: Card; onClick?: () => void; isHidden?: boolean; small?: boolean }> = ({ card, onClick, isHidden, small }) => {
+const GameCardView: React.FC<{ card: Card; onClick?: () => void; isHidden?: boolean; small?: boolean; className?: string }> = ({ card, onClick, isHidden, small, className = '' }) => {
   if (isHidden) {
       return (
-         <div className={`relative bg-emerald-800 border-2 border-emerald-900 rounded-md shadow-md flex items-center justify-center ${small ? 'w-8 h-12' : 'w-16 h-24'} mr-[-12px] md:mr-[-16px]`}>
+         <div className={`relative bg-emerald-800 border-2 border-emerald-900 rounded-md shadow-md flex items-center justify-center ${small ? 'w-8 h-12' : 'w-16 h-24'} ${className}`}>
            <div className="w-full h-full border border-emerald-700 m-1 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-30 mix-blend-overlay"></div>
          </div>
       );
@@ -1680,12 +1681,12 @@ const GameCardView: React.FC<{ card: Card; onClick?: () => void; isHidden?: bool
   return (
     <div 
       onClick={onClick}
-      className={`relative bg-white rounded-md flex flex-col items-center p-1 md:p-2 shadow-lg border border-slate-200 cursor-pointer hover:shadow-xl transition-transform ${card.selected ? '-translate-y-4' : ''} ${small ? 'w-10 h-14 text-xs' : 'w-16 h-24 md:w-20 md:h-28 text-sm md:text-lg'} mr-[-30px] md:mr-[-40px] last:mr-0`}
+      className={`relative bg-white flex flex-col items-center shadow-md border border-slate-200 cursor-pointer hover:shadow-xl transition-transform ${card.selected ? '-translate-y-4' : ''} ${small ? 'w-10 h-14 rounded p-0.5 text-[10px]' : 'w-16 h-24 md:w-20 md:h-28 rounded-md p-1 md:p-2 text-sm md:text-lg'} ${className}`}
     >
       <div className={`font-black self-start leading-none ${isRed ? 'text-red-600' : 'text-slate-800'}`}>
         {card.value}
       </div>
-      <div className={`mt-0.5 self-start leading-none ${isRed ? 'text-red-600' : 'text-slate-800'}`}>
+      <div className={`mt-[1px] self-start leading-none ${isRed ? 'text-red-600' : 'text-slate-800'}`}>
         {card.suit}
       </div>
       {/* 居中大图标 */}
@@ -1926,11 +1927,16 @@ const GameDoudizhu = () => {
     }, [turn, phase]);
 
     // 计算被挡住导致出牌重叠的 className
-    // 优化：间距适度拉开避免只露出一张的情况
     const getCardSpacing = (totalCards: number) => {
-         if (totalCards > 15) return 'mr-[-25px] md:mr-[-35px]';
+         if (totalCards > 15) return 'mr-[-22px] md:mr-[-30px]';
+         if (totalCards > 10) return 'mr-[-18px] md:mr-[-25px]';
+         return 'mr-[-14px] md:mr-[-18px]';
+    };
+
+    const getHandSpacing = (totalCards: number) => {
+         if (totalCards > 17) return 'mr-[-24px] md:mr-[-34px]';
          if (totalCards > 10) return 'mr-[-20px] md:mr-[-30px]';
-         return 'mr-[-15px] md:mr-[-20px]';
+         return 'mr-[-16px] md:mr-[-20px]';
     };
 
     if (phase === 'init') {
@@ -1949,11 +1955,10 @@ const GameDoudizhu = () => {
         );
     }
 
-    return (
-        <div className={`relative ${isFullscreen ? 'fixed inset-0 z-[999] bg-black flex items-center justify-center' : 'w-full max-w-3xl flex flex-col items-center'}`}>
+    const content = (
+        <div className={`relative ${isFullscreen ? 'w-[100vh] h-[100vw] bg-black flex items-center justify-center' : 'w-full max-w-3xl flex flex-col items-center'}`}>
             <div 
-               className={`flex flex-col items-center overflow-hidden shadow-2xl text-slate-100 font-sans border-4 border-emerald-900/50 bg-emerald-700
-               ${isFullscreen ? 'w-[100vh] h-[100vw] rotate-90 origin-center transform scale-[0.95]' : 'w-full rounded-3xl'}`}
+               className={`flex flex-col items-center overflow-hidden shadow-2xl text-slate-100 font-sans border-4 ${isFullscreen ? 'border-none w-[100vh] h-[100vw] rotate-90 scale-100' : 'border-emerald-900/50 w-full rounded-3xl'} bg-emerald-700`}
             >
                 {/* 顶栏控制和状态 */}
                 <div className="w-full bg-emerald-950 px-4 md:px-6 py-2 flex justify-between items-center shadow-md relative z-30">
@@ -1967,19 +1972,19 @@ const GameDoudizhu = () => {
                     </div>
                     
                     {/* 底牌展示区 */}
-                    <div className="flex gap-2 items-center">
-                        <span className="font-bold text-xs text-emerald-300 mr-2 md:block hidden">底牌</span>
+                    <div className="flex items-center">
+                        <span className="font-bold text-xs text-emerald-300 mr-3 md:block hidden">底牌</span>
                         {bottomCards.length > 0 ? bottomCards.map((c, i) => (
-                            <GameCardView 
-                                key={i} 
-                                card={c} 
-                                small 
-                                // calling阶段完全背向盖住，landlord_anim 翻开，playing被地主拿走消失
-                                isHidden={phase === 'calling' || phase === 'ready' || phase === 'dealing'} 
-                            />
+                            <div key={i} className={i !== bottomCards.length - 1 ? 'mr-[-20px] md:mr-[-25px]' : ''}>
+                                <GameCardView 
+                                    card={c} 
+                                    small 
+                                    isHidden={phase === 'calling' || phase === 'ready' || phase === 'dealing'} 
+                                />
+                            </div>
                         )) : (
-                            <div className="flex gap-2">
-                                {[1,2,3].map(i => <div key={i} className="w-8 h-12 bg-emerald-800/50 border border-emerald-900 rounded-md"></div>)}
+                            <div className="flex">
+                                {[1,2,3].map(i => <div key={i} className="w-8 h-12 bg-emerald-800/50 border border-emerald-900 rounded-md mr-1 last:mr-0"></div>)}
                             </div>
                         )}
                     </div>
@@ -2038,9 +2043,9 @@ const GameDoudizhu = () => {
                         )}
                         
                         {phase !== 'ready' && phase !== 'dealing' && tableCards && (
-                             <div className={`flex flex-wrap justify-center px-4 ${getCardSpacing(tableCards.cards.length)}`}>
+                             <div className={`flex justify-center px-4 w-full`}>
                                  {tableCards.cards.map((c, i) => (
-                                      <div key={c.id} style={{ zIndex: i }}>
+                                      <div key={c.id} style={{ zIndex: i }} className={i !== tableCards.cards.length - 1 ? getCardSpacing(tableCards.cards.length) : ''}>
                                           <GameCardView card={c} small />
                                       </div>
                                  ))}
@@ -2107,9 +2112,9 @@ const GameDoudizhu = () => {
                         </div>
                     </div>
 
-                   <div className={`flex flex-wrap justify-center w-full px-2 pl-6 pt-2 transition-all ${getCardSpacing(players[0].length)}`}>
+                   <div className={`flex justify-center w-full px-2 pl-6 pt-2 transition-all`}>
                         {players[0].map((c, idx) => (
-                            <div key={c.id} style={{ zIndex: idx }} className="transition-all duration-300 ease-out">
+                            <div key={c.id} style={{ zIndex: idx }} className={`transition-all duration-300 ease-out ${idx !== players[0].length - 1 ? getHandSpacing(players[0].length) : ''}`}>
                                 <GameCardView card={c} onClick={() => phase === 'playing' && turn === 0 && toggleSelect(c.id)} />
                             </div>
                         ))}
@@ -2119,5 +2124,16 @@ const GameDoudizhu = () => {
             </div>
         </div>
     );
+
+    if (isFullscreen) {
+        return createPortal(
+            <div className="fixed inset-0 z-[99999] bg-black flex items-center justify-center">
+                {content}
+            </div>,
+            document.body
+        );
+    }
+
+    return content;
 };
 
