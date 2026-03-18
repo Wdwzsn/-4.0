@@ -1699,7 +1699,8 @@ const GameCardView: React.FC<{ card: Card; onClick?: () => void; isHidden?: bool
 };
 
 const GameDoudizhu = () => {
-    const [phase, setPhase] = useState<'init'|'calling'|'playing'|'end'>('init');
+    // 增加 dealing 状态（发牌动画中），landlord_anim 状态（地主翻底牌入列动画中）
+    const [phase, setPhase] = useState<'init'|'ready'|'dealing'|'calling'|'landlord_anim'|'playing'|'end'>('init');
     const [players, setPlayers] = useState<Card[][]>([[], [], []]); // 0=User, 1=Right AI, 2=Left AI
     const [bottomCards, setBottomCards] = useState<Card[]>([]);
     const [landlord, setLandlord] = useState<number>(-1);
@@ -1710,6 +1711,12 @@ const GameDoudizhu = () => {
     const [tableCards, setTableCards] = useState<{ player: number; cards: Card[] } | null>(null);
     const [winner, setWinner] = useState(-1);
     const [msgs, setMsgs] = useState<Record<number, string>>({}); 
+    // 特效动效状态
+    const [playEffect, setPlayEffect] = useState<{ type: string, combo: string } | null>(null);
+    // 全屏横屏状态
+    const [isFullscreen, setIsFullscreen] = useState(false);
+    // 未发出的牌堆（用于发牌动画）
+    const [deckToDeal, setDeckToDeal] = useState<Card[]>([]);
 
     const showMsg = (playerIdx: number, text: string) => {
         setMsgs(prev => ({ ...prev, [playerIdx]: text }));
@@ -1718,12 +1725,28 @@ const GameDoudizhu = () => {
         }, 2000);
     };
 
-    const initGame = () => {
+    const triggerEffect = (comboType: string) => {
+        const effectMap: Record<string, string> = {
+            'bomb': '💥 炸弹 💥',
+            'rocket': '🚀 王炸 🚀',
+            'airplane': '✈️ 飞机 ✈️',
+            'airplane_wing': '✈️ 飞机带翅膀',
+            'straight': '🎢 顺子',
+            'straight_pair': '🚂 连对'
+        };
+        if (effectMap[comboType]) {
+            setPlayEffect({ type: comboType, combo: effectMap[comboType] });
+            setTimeout(() => setPlayEffect(null), 1500);
+        }
+    };
+
+    const prepareGame = () => {
         const deck = createDeck();
-        setPlayers([sortHand(deck.slice(0, 17)), sortHand(deck.slice(17, 34)), sortHand(deck.slice(34, 51))]);
-        setBottomCards(deck.slice(51, 54));
-        setPhase('calling');
-        setTurn(0);
+        setDeckToDeal(deck);
+        setPlayers([[], [], []]);
+        setBottomCards([]);
+        setPhase('ready');
+        setTurn(-1);
         setCallScore(0);
         setLandlord(-1);
         setLastPlay(null);
@@ -1731,6 +1754,30 @@ const GameDoudizhu = () => {
         setPassCount(0);
         setWinner(-1);
         setMsgs({});
+    };
+
+    const startDealing = () => {
+        setPhase('dealing');
+        let dealIndex = 0;
+        const tempPlayers: Card[][] = [[], [], []];
+        const deck = [...deckToDeal];
+        
+        const dealInterval = setInterval(() => {
+            if (dealIndex >= 51) {
+                clearInterval(dealInterval);
+                setBottomCards(deck.slice(51, 54));
+                // 发牌结束，整理手牌
+                setPlayers([sortHand(tempPlayers[0]), sortHand(tempPlayers[1]), sortHand(tempPlayers[2])]);
+                setPhase('calling');
+                // 优化1：随机选一个人开始叫地主
+                setTurn(Math.floor(Math.random() * 3));
+                return;
+            }
+            const pIdx = dealIndex % 3;
+            tempPlayers[pIdx].push(deck[dealIndex]);
+            setPlayers([...tempPlayers]); // 触发重渲染显示发牌过程
+            dealIndex++;
+        }, 30); // 每 30ms 发一张牌
     };
 
     // 叫地主阶段逻辑 (玩家叫分)
@@ -1754,15 +1801,15 @@ const GameDoudizhu = () => {
                     
                     if (currentMax === 0) {
                         // 都不叫，重开
-                        alert("都不叫，重新发牌");
-                        initGame();
+                        alert("都不叫，重新洗牌发牌");
+                        prepareGame();
                     } else {
                         // 确定地主
                         const ll = c2 === currentMax ? 2 : (c1 === currentMax ? 1 : 0);
                         becomeLandlord(ll, currentMax);
                     }
-                }, 1000);
-            }, 1000);
+                }, 800);
+            }, 800);
         }
     };
 
@@ -1770,13 +1817,17 @@ const GameDoudizhu = () => {
         setLandlord(playerIdx);
         setCallScore(score);
         showMsg(playerIdx, '抢地主！');
-        setPlayers(prev => {
-            const next = [...prev];
-            next[playerIdx] = sortHand([...next[playerIdx], ...bottomCards]);
-            return next;
-        });
-        setPhase('playing');
-        setTurn(playerIdx);
+        setPhase('landlord_anim'); // 进入翻底牌动画状态
+        
+        setTimeout(() => {
+             setPlayers(prev => {
+                 const next = [...prev];
+                 next[playerIdx] = sortHand([...next[playerIdx], ...bottomCards]);
+                 return next;
+             });
+             setPhase('playing');
+             setTurn(playerIdx);
+        }, 1500); // 展示 1.5 秒底牌再入列
     };
 
     const toggleSelect = (cardId: string) => {
@@ -1817,6 +1868,7 @@ const GameDoudizhu = () => {
         setLastPlay({ player: playerIdx, combo, cards });
         setTableCards({ player: playerIdx, cards });
         setPassCount(0);
+        triggerEffect(combo.type);
 
         // Check win
         if (players[playerIdx].length - cards.length === 0) {
@@ -1840,7 +1892,7 @@ const GameDoudizhu = () => {
                     const combo = getComboType(aiCards);
                     executePlay(turn, aiCards, combo);
                 } else {
-                    showMsg(turn, '要不起');
+                    showMsg(turn, '不出');
                     setPassCount(p => p + 1);
                     setTurn((turn + 1) % 3);
                 }
@@ -1849,124 +1901,221 @@ const GameDoudizhu = () => {
         }
     }, [turn, phase]);
 
+    // AI 自动叫地主检查
+    useEffect(() => {
+       if (phase === 'calling' && turn > 0 && callScore < 3) {
+            // 这部分的 AI 首叫逻辑
+            const timer = setTimeout(() => {
+                let c = Math.random() > 0.5 ? callScore + 1 : 0;
+                if (c > 3) c = 3;
+                if (c > 0) { 
+                    showMsg(turn, `${c}分`); 
+                    if (c === 3) {
+                         becomeLandlord(turn, 3);
+                         return; // 中断后续
+                    } else {
+                         setCallScore(c);
+                    }
+                } else { 
+                    showMsg(turn, `不叫`); 
+                }
+                setTurn((turn + 1) % 3);
+            }, 1000);
+            return () => clearTimeout(timer);
+       }
+    }, [turn, phase]);
+
+    // 计算被挡住导致出牌重叠的 className
+    // 优化：间距适度拉开避免只露出一张的情况
+    const getCardSpacing = (totalCards: number) => {
+         if (totalCards > 15) return 'mr-[-25px] md:mr-[-35px]';
+         if (totalCards > 10) return 'mr-[-20px] md:mr-[-30px]';
+         return 'mr-[-15px] md:mr-[-20px]';
+    };
+
     if (phase === 'init') {
         return (
             <div className="flex flex-col items-center justify-center w-full max-w-2xl py-20 px-4 bg-emerald-900 rounded-3xl text-emerald-100 shadow-2xl relative overflow-hidden">
                 <div className="absolute inset-0 opacity-10 bg-[url('https://www.transparenttextures.com/patterns/pinstripe-light.png')] pointer-events-none"></div>
                 <div className="text-6xl mb-6">🃏</div>
-                <h2 className="text-4xl font-black mb-10 tracking-widest text-emerald-400 drop-shadow-lg">斗地主</h2>
+                <h2 className="text-4xl font-black mb-10 tracking-widest text-emerald-400 drop-shadow-lg">长青园斗地主</h2>
                 <button 
-                  onClick={initGame}
+                  onClick={prepareGame}
                   className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 px-10 py-4 rounded-full font-black text-2xl shadow-[0_4px_20px_rgba(16,185,129,0.5)] active:scale-95 transition-all w-full max-w-sm"
                 >
-                    快速开始
+                    进 入 游 戏
                 </button>
             </div>
         );
     }
 
     return (
-        <div className="flex flex-col items-center w-full max-w-3xl bg-emerald-700 rounded-3xl overflow-hidden shadow-2xl text-slate-100 font-sans border-4 border-emerald-900/50">
-            {/* 顶栏：底牌与倍数 */}
-            <div className="w-full bg-emerald-900/80 px-6 py-2 flex justify-between items-center shadow-md">
-                <div className="font-black text-sm text-emerald-400">底分: 100  倍数: {callScore || 1}</div>
-                <div className="flex gap-2">
-                    {bottomCards.length > 0 ? bottomCards.map((c, i) => (
-                        <GameCardView key={i} card={c} small isHidden={phase === 'calling'} />
-                    )) : (
-                        <div className="text-sm font-bold text-slate-400">底牌未发</div>
+        <div className={`relative ${isFullscreen ? 'fixed inset-0 z-[999] bg-black flex items-center justify-center' : 'w-full max-w-3xl flex flex-col items-center'}`}>
+            <div 
+               className={`flex flex-col items-center overflow-hidden shadow-2xl text-slate-100 font-sans border-4 border-emerald-900/50 bg-emerald-700
+               ${isFullscreen ? 'w-[100vh] h-[100vw] rotate-90 origin-center transform scale-[0.95]' : 'w-full rounded-3xl'}`}
+            >
+                {/* 顶栏控制和状态 */}
+                <div className="w-full bg-emerald-950 px-4 md:px-6 py-2 flex justify-between items-center shadow-md relative z-30">
+                    <div className="flex items-center gap-4">
+                        <button 
+                            onClick={() => setIsFullscreen(!isFullscreen)} 
+                            className="text-white hover:text-emerald-400 font-black flex items-center gap-1 bg-white/10 px-3 py-1 rounded-lg"
+                        >
+                            {isFullscreen ? '❌ 退出全屏' : '🔲 开启全屏 (推荐)'}
+                        </button>
+                    </div>
+                    
+                    {/* 底牌展示区 */}
+                    <div className="flex gap-2 items-center">
+                        <span className="font-bold text-xs text-emerald-300 mr-2 md:block hidden">底牌</span>
+                        {bottomCards.length > 0 ? bottomCards.map((c, i) => (
+                            <GameCardView 
+                                key={i} 
+                                card={c} 
+                                small 
+                                // calling阶段完全背向盖住，landlord_anim 翻开，playing被地主拿走消失
+                                isHidden={phase === 'calling' || phase === 'ready' || phase === 'dealing'} 
+                            />
+                        )) : (
+                            <div className="flex gap-2">
+                                {[1,2,3].map(i => <div key={i} className="w-8 h-12 bg-emerald-800/50 border border-emerald-900 rounded-md"></div>)}
+                            </div>
+                        )}
+                    </div>
+                    
+                    <div className="font-black text-sm text-emerald-400">倍数: {callScore || 1}</div>
+                </div>
+
+                {/* 桌面互动区 */}
+                <div className="relative w-full flex-1 min-h-[300px] md:min-h-[400px] bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-emerald-600 to-emerald-800 p-4 shadow-inner">
+                    {/* 桌面水印 */}
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-10">
+                        <span className="text-9xl font-black">赛</span>
+                    </div>
+
+                    {/* AI 2 (左上) */}
+                    <div className="absolute top-8 left-4 flex flex-col items-center">
+                        <div className="w-12 h-12 md:w-14 md:h-14 bg-white/20 rounded-full border-2 border-emerald-300 flex items-center justify-center text-xl md:text-2xl shadow-lg relative">
+                            🤖
+                            {landlord === 2 && <div className="absolute -top-3 -right-3 text-2xl drop-shadow-md">👑</div>}
+                        </div>
+                        <div className="mt-2 bg-black/40 px-3 py-1 rounded-full text-xs font-bold text-yellow-300">
+                            牌数: {players[2].length}
+                        </div>
+                        {msgs[2] && <div className="absolute top-2 left-14 md:left-16 bg-white text-slate-800 px-3 py-1 rounded-xl shadow-lg font-bold whitespace-nowrap z-20 before:content-[''] before:absolute before:right-full before:top-2 before:border-4 before:border-transparent before:border-r-white">{msgs[2]}</div>}
+                    </div>
+
+                    {/* AI 1 (右上) */}
+                    <div className="absolute top-8 right-4 flex flex-col items-center">
+                        <div className="w-12 h-12 md:w-14 md:h-14 bg-white/20 rounded-full border-2 border-emerald-300 flex items-center justify-center text-xl md:text-2xl shadow-lg relative">
+                            🤖
+                            {landlord === 1 && <div className="absolute -top-3 -right-3 text-2xl drop-shadow-md">👑</div>}
+                        </div>
+                        <div className="mt-2 bg-black/40 px-3 py-1 rounded-full text-xs font-bold text-yellow-300">
+                             牌数: {players[1].length}
+                        </div>
+                        {msgs[1] && <div className="absolute top-2 right-14 md:right-16 bg-white text-slate-800 px-3 py-1 rounded-xl shadow-lg font-bold whitespace-nowrap z-20 before:content-[''] before:absolute before:left-full before:top-2 before:border-4 before:border-transparent before:border-l-white">{msgs[1]}</div>}
+                    </div>
+
+                    {/* 桌面中央出牌区 */}
+                    <div className="absolute inset-0 flex items-center justify-center pt-8 pointer-events-none z-10 overflow-hidden">
+                        {(phase === 'ready' || phase === 'dealing') && (
+                            <div className="flex flex-col items-center">
+                                <div className="w-24 h-32 bg-emerald-800 rounded-xl border-4 border-emerald-900 shadow-2xl relative flex items-center justify-center mb-6">
+                                     <div className="w-full h-full bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-30 mix-blend-overlay"></div>
+                                     <span className="absolute text-emerald-950 font-black text-4xl">扑克</span>
+                                </div>
+                                {phase === 'ready' && (
+                                    <button onClick={startDealing} className="pointer-events-auto bg-amber-500 hover:bg-amber-400 text-amber-950 px-8 py-3 rounded-full font-black text-xl shadow-lg active:scale-95 transition-all">
+                                        开始洗牌发牌
+                                    </button>
+                                )}
+                                {phase === 'dealing' && (
+                                    <div className="text-yellow-300 font-bold animate-pulse text-lg">发牌中...</div>
+                                )}
+                            </div>
+                        )}
+                        
+                        {phase !== 'ready' && phase !== 'dealing' && tableCards && (
+                             <div className={`flex flex-wrap justify-center px-4 ${getCardSpacing(tableCards.cards.length)}`}>
+                                 {tableCards.cards.map((c, i) => (
+                                      <div key={c.id} style={{ zIndex: i }}>
+                                          <GameCardView card={c} small />
+                                      </div>
+                                 ))}
+                             </div>
+                        )}
+                    </div>
+
+                    {/* 特效层 (覆盖全桌) */}
+                    {playEffect && (
+                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-50 animate-[ping_1.5s_cubic-bezier(0,0,0.2,1)_forwards]">
+                            <div className="text-4xl md:text-6xl font-black text-yellow-300 drop-shadow-[0_0_20px_rgba(234,179,8,1)] stroke-red-600 stroke-2" style={{ WebkitTextStroke: '2px red' }}>
+                                {playEffect.combo}
+                            </div>
+                        </div>
                     )}
-                </div>
-                <div className="font-black text-sm text-emerald-400">长青园斗地主</div>
-            </div>
 
-            {/* 桌面互动区 */}
-            <div className="relative w-full h-[360px] md:h-[400px] bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-emerald-600 to-emerald-800 p-4 shadow-inner">
-                {/* 桌面水印 */}
-                <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-10">
-                    <span className="text-9xl font-black">赛</span>
+                    {/* 自己 (下方中央消息) */}
+                    <div className="absolute bottom-6 left-1/2 -translate-x-1/2 min-h-8 z-20">
+                        {msgs[0] && <div className="bg-white text-slate-800 px-4 py-1.5 rounded-full shadow-lg font-bold whitespace-nowrap">{msgs[0]}</div>}
+                    </div>
                 </div>
 
-                {/* AI 2 (左上) */}
-                <div className="absolute top-8 left-4 flex flex-col items-center">
-                    <div className="w-14 h-14 bg-white/20 rounded-full border-2 border-emerald-300 flex items-center justify-center text-2xl shadow-lg relative">
-                        🤖
-                        {landlord === 2 && <div className="absolute -top-3 -right-3 text-2xl">👑</div>}
-                    </div>
-                    <div className="mt-2 bg-black/40 px-3 py-1 rounded-full text-xs font-bold text-yellow-300">
-                        牌数: {players[2].length}
-                    </div>
-                    {msgs[2] && <div className="absolute top-2 left-16 bg-white text-slate-800 px-3 py-1 rounded-xl shadow-lg font-bold whitespace-nowrap z-20 before:content-[''] before:absolute before:right-full before:top-2 before:border-4 before:border-transparent before:border-r-white">{msgs[2]}</div>}
-                </div>
-
-                {/* AI 1 (右上) */}
-                <div className="absolute top-8 right-4 flex flex-col items-center">
-                    <div className="w-14 h-14 bg-white/20 rounded-full border-2 border-emerald-300 flex items-center justify-center text-2xl shadow-lg relative">
-                        🤖
-                        {landlord === 1 && <div className="absolute -top-3 -right-3 text-2xl">👑</div>}
-                    </div>
-                    <div className="mt-2 bg-black/40 px-3 py-1 rounded-full text-xs font-bold text-yellow-300">
-                         牌数: {players[1].length}
-                    </div>
-                    {msgs[1] && <div className="absolute top-2 right-16 bg-white text-slate-800 px-3 py-1 rounded-xl shadow-lg font-bold whitespace-nowrap z-20 before:content-[''] before:absolute before:left-full before:top-2 before:border-4 before:border-transparent before:border-l-white">{msgs[1]}</div>}
-                </div>
-
-                {/* 桌面中央出牌区 */}
-                <div className="absolute inset-0 flex items-center justify-center pt-8 pointer-events-none z-10">
-                    {tableCards && (
-                         <div className="flex">
-                             {tableCards.cards.map(c => <GameCardView key={c.id} card={c} small />)}
+                {/* 操作控制区 */}
+                <div className="w-full bg-emerald-800/90 px-2 py-3 md:py-4 flex justify-center gap-2 md:gap-4 min-h-[60px] md:min-h-[70px] z-30 relative shadow-[0_-5px_15px_rgba(0,0,0,0.2)]">
+                    {phase === 'calling' && turn === 0 && (
+                        <>
+                            <button onClick={() => handleCall(0)} className="bg-slate-500 hover:bg-slate-400 text-white px-4 md:px-8 py-2 md:py-2.5 rounded-full font-bold md:font-black active:scale-95 shadow-md">不叫</button>
+                            <button onClick={() => handleCall(1)} className="bg-emerald-500 hover:bg-emerald-400 text-white px-4 md:px-6 py-2 md:py-2.5 rounded-full font-bold md:font-black active:scale-95 shadow-md">1分</button>
+                            <button onClick={() => handleCall(2)} className="bg-emerald-500 hover:bg-emerald-400 text-white px-4 md:px-6 py-2 md:py-2.5 rounded-full font-bold md:font-black active:scale-95 shadow-md">2分</button>
+                            <button onClick={() => handleCall(3)} className="bg-amber-500 hover:bg-amber-400 text-amber-950 px-4 md:px-6 py-2 md:py-2.5 rounded-full font-bold md:font-black active:scale-95 shadow-[0_0_15px_rgba(245,158,11,0.5)]">3分(抢)</button>
+                        </>
+                    )}
+                    {phase === 'calling' && turn !== 0 && (
+                        <div className="text-yellow-300 font-bold flex items-center gap-2"><span className="animate-spin">⏳</span> 等待其他玩家叫地主...</div>
+                    )}
+                    {phase === 'playing' && turn === 0 && (
+                         <>
+                            <button onClick={handlePass} disabled={!lastPlay || passCount >= 2} className="bg-slate-500 hover:bg-slate-400 disabled:opacity-50 text-white px-6 md:px-10 py-2.5 md:py-3 rounded-full font-black text-lg md:text-xl active:scale-95 shadow-md">不出</button>
+                            <button onClick={handlePlayCard} className="bg-amber-500 hover:bg-amber-400 text-amber-950 disabled:opacity-50 px-6 md:px-10 py-2.5 md:py-3 rounded-full font-black text-lg md:text-xl active:scale-95 shadow-[0_0_15px_rgba(245,158,11,0.5)] transform scale-105">出牌</button>
+                         </>
+                    )}
+                    {phase === 'playing' && turn !== 0 && (
+                         <div className="text-yellow-300 font-bold flex items-center gap-2"><span className="animate-spin">⏳</span> 等待 AI 出牌...</div>
+                    )}
+                    {phase === 'landlord_anim' && (
+                         <div className="text-emerald-300 font-bold text-lg animate-pulse">🎉 确立地主，底牌归入...</div>
+                    )}
+                    {phase === 'end' && (
+                         <div className="w-full flex items-center justify-between px-8">
+                             <div className="text-xl md:text-2xl font-black text-amber-300 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]">
+                                 {winner === 0 ? '🏆 恭喜大获全胜！' : `😢 玩家 ${winner === 1 ? '右侧🤖' : '左侧🤖'} 赢了本局！`}
+                             </div>
+                             <button onClick={prepareGame} className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 px-8 md:px-10 py-3 rounded-full font-black text-lg shadow-lg active:scale-95 transition-all outline outline-4 outline-emerald-300/30">再来一局</button>
                          </div>
                     )}
                 </div>
 
-                {/* 自己 (下方中央消息) */}
-                <div className="absolute bottom-6 left-1/2 -translate-x-1/2 min-h-8 z-20">
-                    {msgs[0] && <div className="bg-white text-slate-800 px-4 py-1.5 rounded-full shadow-lg font-bold whitespace-nowrap">{msgs[0]}</div>}
-                </div>
-            </div>
-
-            {/* 操作控制区 */}
-            <div className="w-full bg-emerald-800/80 px-4 py-3 flex justify-center gap-4 min-h-[60px]">
-                {phase === 'calling' && turn === 0 && (
-                    <>
-                        <button onClick={() => handleCall(0)} className="bg-slate-500 text-white px-6 py-2 rounded-full font-bold active:scale-95 shadow-md">不叫</button>
-                        <button onClick={() => handleCall(1)} className="bg-emerald-500 text-white px-6 py-2 rounded-full font-bold active:scale-95 shadow-md">1分</button>
-                        <button onClick={() => handleCall(2)} className="bg-emerald-500 text-white px-6 py-2 rounded-full font-bold active:scale-95 shadow-md">2分</button>
-                        <button onClick={() => handleCall(3)} className="bg-amber-500 text-amber-950 px-6 py-2 rounded-full font-bold active:scale-95 shadow-md">3分(抢)</button>
-                    </>
-                )}
-                {phase === 'playing' && turn === 0 && (
-                     <>
-                        <button onClick={handlePass} disabled={!lastPlay || passCount >= 2} className="bg-slate-500 disabled:opacity-50 text-white px-8 py-2.5 rounded-full font-bold active:scale-95 shadow-md">不出</button>
-                        {/* 提示按钮较难做到完美，这里简易跳过 */}
-                        <button onClick={handlePlayCard} className="bg-amber-500 text-amber-950 disabled:opacity-50 px-8 py-2.5 rounded-full font-black active:scale-95 shadow-[0_0_15px_rgba(245,158,11,0.5)]">出牌</button>
-                     </>
-                )}
-                {phase === 'end' && (
-                     <div className="w-full text-center flex flex-col items-center">
-                         <div className="text-2xl font-black text-amber-300 mb-2 drop-shadow-md">
-                             {winner === 0 ? '🎉 恭喜你赢了！' : `😢 玩家 ${winner === 1 ? '右侧AI' : '左侧AI'} 获胜！`}
-                         </div>
-                         <button onClick={initGame} className="bg-emerald-500 text-white px-8 py-2 rounded-full font-bold active:scale-95 shadow-md mt-2">再来一局</button>
-                     </div>
-                )}
-            </div>
-
-            {/* 玩家手牌区 */}
-            <div className="w-full bg-emerald-950 p-4 md:p-6 flex flex-col items-center relative">
-               <div className="absolute top-2 left-4 flex flex-col items-center">
-                    <div className="w-10 h-10 bg-emerald-500/20 rounded-full border border-emerald-400 flex items-center justify-center text-lg shadow-sm">
-                        🧑
-                        {landlord === 0 && <div className="absolute -top-3 -right-2 text-xl">👑</div>}
+                {/* 玩家手牌区 (优化卡牌过密被防挡出的情况) */}
+                <div className="w-full bg-emerald-950 p-4 md:p-6 flex flex-col items-center relative min-h-[140px] md:min-h-[160px] z-20">
+                   <div className="absolute top-2 left-4 flex flex-col items-center z-10">
+                        <div className="w-12 h-12 bg-emerald-500/20 rounded-full border border-emerald-400 flex items-center justify-center text-xl shadow-sm relative">
+                            🧑
+                            {landlord === 0 && <div className="absolute -top-3 -right-2 text-2xl drop-shadow-md">👑</div>}
+                        </div>
                     </div>
-                </div>
 
-               <div className="flex flex-wrap justify-center w-full min-h-[120px] px-8 pl-14">
-                    {players[0].map(c => (
-                        <GameCardView key={c.id} card={c} onClick={() => phase === 'playing' && turn === 0 && toggleSelect(c.id)} />
-                    ))}
-               </div>
+                   <div className={`flex flex-wrap justify-center w-full px-2 pl-6 pt-2 transition-all ${getCardSpacing(players[0].length)}`}>
+                        {players[0].map((c, idx) => (
+                            <div key={c.id} style={{ zIndex: idx }} className="transition-all duration-300 ease-out">
+                                <GameCardView card={c} onClick={() => phase === 'playing' && turn === 0 && toggleSelect(c.id)} />
+                            </div>
+                        ))}
+                   </div>
+                   {players[0].length === 0 && phase !== 'init' && phase !== 'ready' && <div className="text-slate-500 font-bold mt-4">手牌已出完</div>}
+                </div>
             </div>
         </div>
     );
